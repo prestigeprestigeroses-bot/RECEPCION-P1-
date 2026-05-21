@@ -803,20 +803,6 @@ async function finalizarViaje() {
 
 async function escanearCodigo(barcode) {
   try {
-    const barcodeLimpio = String(barcode || "").trim();
-
-    if (!viajeActivo) {
-      setStatus("Debes activar un viaje antes de escanear", "warn");
-      return;
-    }
-
-    if (!barcodeLimpio) {
-      setStatus("El barcode está vacío", "warn");
-      return;
-    }
-
-    async function escanearCodigo(barcode) {
-  try {
     const barcodeLimpio = String(barcode || "")
       .replace(/[^A-Za-z0-9]/g, "")
       .toUpperCase()
@@ -838,8 +824,8 @@ async function escanearCodigo(barcode) {
       form: formInput?.value?.trim() || ""
     };
 
-    let res;
-    let data;
+    let res = null;
+    let data = null;
 
     try {
       res = await fetch("/api/escanear", {
@@ -853,12 +839,10 @@ async function escanearCodigo(barcode) {
       data = await res.json();
 
     } catch (networkError) {
-      // Aquí entra cuando no hay internet o Railway no responde.
       await guardarRegistroOffline(payload);
 
       setStatus(`${barcodeLimpio} → GUARDADO OFFLINE`, "warn");
 
-      // Actualización visual inmediata
       const actual = Number(totalEscaneados?.textContent || 0);
       setText(totalEscaneados, actual + 1);
 
@@ -870,8 +854,12 @@ async function escanearCodigo(barcode) {
       return;
     }
 
-    if (!res.ok || data.ok === false) {
-      const mensaje = data.error || data.mensaje || data.resultado || "Error al escanear";
+    if (!res || !res.ok || !data || data.ok === false) {
+      const mensaje =
+        data?.error ||
+        data?.mensaje ||
+        data?.resultado ||
+        "Error al escanear";
 
       setStatus(`${barcodeLimpio} → ${mensaje}`, "error");
 
@@ -885,6 +873,12 @@ async function escanearCodigo(barcode) {
 
     if (data.resultado === "OK") {
       setStatus(`${barcodeLimpio} → REGISTRADO`, "ok");
+
+      const actual = Number(totalEscaneados?.textContent || 0);
+      setText(totalEscaneados, actual + 1);
+
+      const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
+      setAcumuladoSeguro(acumulado + 1);
 
     } else if (data.resultado === "YA_REGISTRADO") {
       duplicadosSesionActual += 1;
@@ -910,6 +904,12 @@ async function escanearCodigo(barcode) {
     } else if (data.resultado === "REREGISTRADO") {
       setStatus(`${barcodeLimpio} → RE-REGISTRADO`, "ok");
 
+      const actual = Number(totalEscaneados?.textContent || 0);
+      setText(totalEscaneados, actual + 1);
+
+      const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
+      setAcumuladoSeguro(acumulado + 1);
+
     } else if (data.resultado === "NO_EXISTE") {
       erroresSesionActual += 1;
       pintarDuplicadosYErrores();
@@ -920,130 +920,48 @@ async function escanearCodigo(barcode) {
       setStatus(`Escaneo procesado: ${barcodeLimpio}`, "ok");
     }
 
-    if (data.resultado === "OK" || data.resultado === "REREGISTRADO") {
-      const actual = Number(totalEscaneados?.textContent || 0);
-      setText(totalEscaneados, actual + 1);
-
-      const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
-      setAcumuladoSeguro(acumulado + 1);
-    }
-
     setTimeout(() => {
       conservarPosicionPantalla(async () => {
         await refrescarResumen();
         await refrescarPivot();
-        await refrescarDetalle();
+
+        if (!mostrandoRegistrosHistoricos) {
+          await refrescarDetalle();
+        }
+
         await refrescarResumenDesdeBD();
         await cargarContadorGeneralBD();
+
+        const bloqueSeleccionado = bloqueGeneralSelect?.value || "";
+        const variedadSeleccionada = variedadGeneralSelect?.value || "";
+
+        await cargarBloquesGenerales();
+
+        if (bloqueSeleccionado) {
+          bloqueGeneralSelect.value = bloqueSeleccionado;
+
+          await cargarVariedadesGeneralesPorBloque(
+            bloqueSeleccionado,
+            variedadSeleccionada
+          );
+
+          if (variedadSeleccionada) {
+            variedadGeneralSelect.value = variedadSeleccionada;
+          }
+
+          await cargarResumenGeneralPorBloque(
+            bloqueSeleccionado,
+            variedadSeleccionada
+          );
+
+          await cargarDetalleGeneralPorBloque(
+            bloqueSeleccionado,
+            variedadSeleccionada
+          );
+        }
       });
     }, 250);
 
-  } catch (error) {
-    console.error("Error escaneando:", error);
-    setStatus("Error escaneando", "error");
-  }
-}
-
-    const data = await res.json();
-
-    if (!res.ok || data.ok === false) {
-  const mensaje = data.error || data.mensaje || data.resultado || "Error al escanear";
-
-  setStatus(`${barcodeLimpio} → ${mensaje}`, "error");
-
-  console.error(
-    "Error backend /api/escanear:",
-    JSON.stringify(data, null, 2)
-  );
-
-  return;
-}
-
-    if (data.resultado === "OK") {
-  setStatus(`${barcodeLimpio} → REGISTRADO`, "ok");
-
-} else if (data.resultado === "YA_REGISTRADO") {
-  duplicadosSesionActual += 1;
-
-  cacheYaRegistrados.unshift({
-    fecha: new Date().toISOString(),
-    barcode: data.data?.barcode || barcodeLimpio,
-    tipo: data.data?.tipo || "",
-    serial: data.data?.serial || "",
-    variedad: data.data?.variedad || "",
-    bloque: data.data?.bloque || "",
-    tamano: data.data?.tamano || "",
-    tallos: data.data?.tallos || "",
-    resultado: "YA_REGISTRADO",
-    observacion: data.data?.observacion || "El barcode ya existe en registros"
-  });
-
-  pintarDuplicadosYErrores();
-  renderYaRegistrados();
-
-  setStatus(`${barcodeLimpio} → YA REGISTRADO`, "warn");
-
-} else if (data.resultado === "REREGISTRADO") {
-  setStatus(`${barcodeLimpio} → RE-REGISTRADO`, "ok");
-
-} else if (data.resultado === "NO_EXISTE") {
-  erroresSesionActual += 1;
-  pintarDuplicadosYErrores();
-
-  setStatus(`${barcodeLimpio} → NO EXISTE`, "error");
-
-} else {
-  setStatus(`Escaneo procesado: ${barcodeLimpio}`, "ok");
-}
-
-    // Actualización rápida visual inmediata
-if (data.resultado === "OK" || data.resultado === "REREGISTRADO") {
-  const actual = Number(totalEscaneados?.textContent || 0);
-  setText(totalEscaneados, actual + 1);
-
-  const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
-  setAcumuladoSeguro(acumulado + 1);
-}
-
-// Refresco completo en segundo plano, sin bloquear el siguiente escaneo
-setTimeout(() => {
-  conservarPosicionPantalla(async () => {
-    await refrescarResumen();
-    await refrescarPivot();
-    await refrescarDetalle();
-    await refrescarResumenDesdeBD();
-    await cargarContadorGeneralBD();
-
-    // Actualiza selects de consulta general
-    const bloqueSeleccionado = bloqueGeneralSelect?.value || "";
-    const variedadSeleccionada = variedadGeneralSelect?.value || "";
-
-    await cargarBloquesGenerales();
-
-    if (bloqueSeleccionado) {
-      bloqueGeneralSelect.value = bloqueSeleccionado;
-
-      await cargarVariedadesGeneralesPorBloque(
-        bloqueSeleccionado,
-        variedadSeleccionada
-      );
-
-      if (variedadSeleccionada) {
-        variedadGeneralSelect.value = variedadSeleccionada;
-      }
-
-      await cargarResumenGeneralPorBloque(
-        bloqueSeleccionado,
-        variedadSeleccionada
-      );
-
-      await cargarDetalleGeneralPorBloque(
-        bloqueSeleccionado,
-        variedadSeleccionada
-      );
-    }
-  });
-}, 250);
   } catch (error) {
     console.error("Error escaneando:", error);
     setStatus("Error escaneando", "error");
