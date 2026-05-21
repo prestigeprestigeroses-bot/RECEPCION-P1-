@@ -184,7 +184,23 @@ async function obtenerRegistrosOfflinePendientes() {
     request.onerror = () => reject(request.error);
   });
 }
+async function existeRegistroOfflinePendiente(barcode) {
+  const pendientes = await obtenerRegistrosOfflinePendientes();
 
+  const codigo = String(barcode || "")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .toUpperCase()
+    .trim();
+
+  return pendientes.some((item) => {
+    const itemBarcode = String(item.barcode || "")
+      .replace(/[^A-Za-z0-9]/g, "")
+      .toUpperCase()
+      .trim();
+
+    return itemBarcode === codigo;
+  });
+}
 async function eliminarRegistroOffline(id) {
   const db = await abrirDBOffline();
 
@@ -839,9 +855,35 @@ async function escanearCodigo(barcode) {
       data = await res.json();
 
     } catch (networkError) {
-      await guardarRegistroOffline(payload);
+      const yaExisteOffline = await existeRegistroOfflinePendiente(barcodeLimpio);
 
-      setStatus(`${barcodeLimpio} → GUARDADO OFFLINE`, "warn");
+if (yaExisteOffline) {
+  duplicadosSesionActual += 1;
+
+  cacheYaRegistrados.unshift({
+    fecha: new Date().toISOString(),
+    barcode: barcodeLimpio,
+    tipo: "",
+    serial: "",
+    variedad: "Pendiente offline",
+    bloque: "Pendiente offline",
+    tamano: "",
+    tallos: "",
+    resultado: "YA_REGISTRADO",
+    observacion: "Este código ya está guardado localmente pendiente de sincronizar"
+  });
+
+  pintarDuplicadosYErrores();
+  renderYaRegistrados();
+
+  setStatus(`${barcodeLimpio} → YA REGISTRADO OFFLINE`, "warn");
+
+  return;
+}
+
+await guardarRegistroOffline(payload);
+
+setStatus(`${barcodeLimpio} → GUARDADO OFFLINE`, "warn");
 
       const actual = Number(totalEscaneados?.textContent || 0);
       setText(totalEscaneados, actual + 1);
@@ -967,6 +1009,7 @@ async function escanearCodigo(barcode) {
     setStatus("Error escaneando", "error");
   }
 }
+
 
 async function reregistrarCodigo(barcodeOriginal) {
   if (!viajeActivo) {
@@ -2184,6 +2227,15 @@ window.addEventListener("load", async () => {
     await sincronizarRegistrosOffline();
   }, 1500);
 }
-  
+  window.addEventListener("online", async () => {
+  setStatus("Internet recuperado. Sincronizando pendientes...", "warn");
+
+  try {
+    await sincronizarRegistrosOffline();
+  } catch (err) {
+    console.error("Error sincronizando al volver internet:", err);
+    setStatus("Error sincronizando registros pendientes", "error");
+  }
+});
 });
 
