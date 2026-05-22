@@ -327,6 +327,33 @@
       margin-bottom:18px;
       backdrop-filter:blur(8px);
     }
+    .card-header-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.card-header-toggle h2 {
+  margin-bottom: 0;
+}
+
+.btn-toggle-section {
+  background: linear-gradient(135deg, #334155, #475569);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 9px 14px;
+  font-weight: 900;
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.btn-toggle-section:hover {
+  opacity: 0.92;
+}
 
     .card h2{
       font-size:1.16rem;
@@ -1030,8 +1057,20 @@
           </section>
 
           <section class="card full-width" id="detalle">
-            <h2>Últimos registros escaneados</h2>
-            <div class="table-wrap">
+  <div class="card-header-toggle">
+    <h2>Últimos registros escaneados</h2>
+
+    <button
+      id="btn-toggle-detalle-escaneado"
+      class="btn-toggle-section"
+      type="button"
+    >
+      Ocultar
+    </button>
+  </div>
+
+  <div id="detalle-escaneado-contenido">
+    <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
@@ -1054,6 +1093,7 @@
                   </tr>
                 </tbody>
               </table>
+              </div>
             </div>
           </section>
 

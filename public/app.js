@@ -90,6 +90,8 @@ window.barcodeInput = barcodeInput;
 const pivotBody = document.getElementById("pivot-body");
 const detalleBody = document.getElementById("detalle-body");
 const yaRegistradosLista = document.getElementById("ya-registrados-lista");
+const btnToggleDetalleEscaneado = document.getElementById("btn-toggle-detalle-escaneado");
+const detalleEscaneadoContenido = document.getElementById("detalle-escaneado-contenido");
 
 const contadorGeneralBd = document.getElementById("contador-general-bd");
 const contadorTallosGeneralBd = document.getElementById("contador-tallos-general-bd");
@@ -2017,6 +2019,20 @@ if (modalYaRegistrados) {
   modalYaRegistrados.addEventListener("click", (e) => {
     if (e.target === modalYaRegistrados) {
       cerrarModalYaRegistradosFn();
+    }
+  });
+}
+
+if (btnToggleDetalleEscaneado && detalleEscaneadoContenido) {
+  btnToggleDetalleEscaneado.addEventListener("click", () => {
+    const estaOculto = detalleEscaneadoContenido.style.display === "none";
+
+    if (estaOculto) {
+      detalleEscaneadoContenido.style.display = "block";
+      btnToggleDetalleEscaneado.textContent = "Ocultar";
+    } else {
+      detalleEscaneadoContenido.style.display = "none";
+      btnToggleDetalleEscaneado.textContent = "Mostrar";
     }
   });
 }
