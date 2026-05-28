@@ -508,19 +508,34 @@ async function cargarVariedadesGlobales() {
   if (!variedadGlobalSelect) return;
 
   try {
+    const seleccionada = variedadGlobalSelect.value || "";
+
     const res = await fetch("/api/general/variedades");
     if (!res.ok) return;
 
     const json = await res.json();
-    if (!json.ok) return;
+    if (!json.ok || !Array.isArray(json.data)) return;
 
-    const seleccionada = variedadGlobalSelect.value || "";
+    const opcionesActuales = Array.from(variedadGlobalSelect.options)
+      .map((option) => option.value);
+
+    const nuevasVariedades = json.data
+      .map((v) => String(v || "").trim())
+      .filter((v) => v);
+
+    // Evita reconstruir el select si no cambió nada
+    const actualesSinVacio = opcionesActuales.filter((v) => v);
+    const mismasOpciones =
+      actualesSinVacio.length === nuevasVariedades.length &&
+      actualesSinVacio.every((v, i) => v === nuevasVariedades[i]);
+
+    if (mismasOpciones) return;
 
     variedadGlobalSelect.innerHTML = `
       <option value="">Seleccionar variedad general</option>
     `;
 
-    json.data.forEach((variedad) => {
+    nuevasVariedades.forEach((variedad) => {
       const option = document.createElement("option");
       option.value = variedad;
       option.textContent = variedad;
@@ -958,6 +973,7 @@ if (!mostrandoRegistrosHistoricos) {
 await refrescarPivot();
 await refrescarResumenDesdeBD();
 await cargarContadorGeneralBD();
+await cargarVariedadesGlobales();
 
 const bloque = bloqueGeneralSelect?.value || "";
 const variedad = variedadGeneralSelect?.value || "";
@@ -1270,18 +1286,19 @@ async function escanearCodigo(barcode) {
     }
 
     setTimeout(() => {
-      conservarPosicionPantalla(async () => {
-        await refrescarResumen();
-        await refrescarPivot();
+  conservarPosicionPantalla(async () => {
+    await refrescarResumen();
+    await refrescarPivot();
 
-        if (!mostrandoRegistrosHistoricos) {
-          await refrescarDetalle();
-        }
+    if (!mostrandoRegistrosHistoricos) {
+      await refrescarDetalle();
+    }
 
-        await refrescarResumenDesdeBD();
-        await cargarContadorGeneralBD();
-      });
-    }, 250);
+    await refrescarResumenDesdeBD();
+    await cargarContadorGeneralBD();
+    await cargarVariedadesGlobales();
+  });
+}, 250);
 
   } catch (error) {
     console.error("Error escaneando:", error);
@@ -2464,6 +2481,9 @@ window.addEventListener("load", async () => {
 await cargarBloquesGenerales();
 await cargarVariedadesGlobales();
 await cargarViajes();
+setInterval(async () => {
+  await cargarVariedadesGlobales();
+}, 5000);
 
   limpiarConsultaGeneral();
 
