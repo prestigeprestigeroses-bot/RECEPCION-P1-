@@ -79,6 +79,7 @@ const barcodeVisible = document.getElementById("barcode-visible");
 const cardDuplicados = document.getElementById("card-duplicados");
 const formInput = document.getElementById("form");
 const statusBar = document.getElementById("status-bar");
+const internetStatus = document.getElementById("internet-status");
 const resumenVariedadBody = document.getElementById("resumen-variedad-body");
 const viajeActivoLabel = document.getElementById("viaje-activo-label");
 const totalEscaneados = document.getElementById("total-escaneados");
@@ -90,13 +91,16 @@ window.barcodeInput = barcodeInput;
 const pivotBody = document.getElementById("pivot-body");
 const detalleBody = document.getElementById("detalle-body");
 const yaRegistradosLista = document.getElementById("ya-registrados-lista");
-const btnToggleDetalleEscaneado = document.getElementById("btn-toggle-detalle-escaneado");
-const detalleEscaneadoContenido = document.getElementById("detalle-escaneado-contenido");
+const resumenVariedadGlobalBox = document.getElementById("resumen-variedad-global-box");
+const nombreVariedadGlobal = document.getElementById("nombre-variedad-global");
+const totalTabacosVariedadGlobal = document.getElementById("total-tabacos-variedad-global");
+const totalTallosVariedadGlobal = document.getElementById("total-tallos-variedad-global");
 
 const contadorGeneralBd = document.getElementById("contador-general-bd");
 const contadorTallosGeneralBd = document.getElementById("contador-tallos-general-bd");
 const bloqueGeneralSelect = document.getElementById("bloque-general-select");
 const variedadGeneralSelect = document.getElementById("variedad-general-select");
+const variedadGlobalSelect = document.getElementById("variedad-global-select");
 const generalBloqueBody = document.getElementById("general-bloque-body");
 const generalBloqueDetalleBody = document.getElementById("general-bloque-detalle-body");
 
@@ -120,7 +124,9 @@ function setHTML(el, value) {
 }
 // =====================================================
 // BASE LOCAL OFFLINE - INDEXEDDB
+// Guarda registros cuando no hay internet
 // =====================================================
+
 const OFFLINE_DB_NAME = "poscosecha_offline_db";
 const OFFLINE_DB_VERSION = 1;
 const OFFLINE_STORE = "registros_pendientes";
@@ -186,6 +192,20 @@ async function obtenerRegistrosOfflinePendientes() {
     request.onerror = () => reject(request.error);
   });
 }
+
+async function eliminarRegistroOffline(id) {
+  const db = await abrirDBOffline();
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(OFFLINE_STORE, "readwrite");
+    const store = tx.objectStore(OFFLINE_STORE);
+    const request = store.delete(id);
+
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => reject(request.error);
+  });
+}
+
 async function existeRegistroOfflinePendiente(barcode) {
   const pendientes = await obtenerRegistrosOfflinePendientes();
 
@@ -203,17 +223,85 @@ async function existeRegistroOfflinePendiente(barcode) {
     return itemBarcode === codigo;
   });
 }
-async function eliminarRegistroOffline(id) {
-  const db = await abrirDBOffline();
 
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(OFFLINE_STORE, "readwrite");
-    const store = tx.objectStore(OFFLINE_STORE);
-    const request = store.delete(id);
+function agregarRegistroOfflineVisual(payload) {
+  const row = {
+    fecha: new Date().toISOString(),
+    barcode: payload.barcode,
+    bloque: "Pendiente",
+    variedad: "Pendiente de sincronizar",
+    tamano: "",
+    tallos: "",
+    form: payload.form || "",
+    resultado: "OFFLINE",
+    observacion: "Guardado localmente. Pendiente de sincronización."
+  };
 
-    request.onsuccess = () => resolve(true);
-    request.onerror = () => reject(request.error);
-  });
+  cacheDetalle.unshift(row);
+  renderDetalle(cacheDetalle);
+}
+async function sincronizarRegistrosOffline() {
+  const pendientes = await obtenerRegistrosOfflinePendientes();
+
+  if (!pendientes.length) {
+    return;
+  }
+
+  setStatus(`Sincronizando ${pendientes.length} registros pendientes...`, "warn");
+
+  let sincronizados = 0;
+  let fallidos = 0;
+
+  for (const item of pendientes) {
+    try {
+      const res = await fetch("/api/escanear", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          barcode: item.barcode,
+          viaje: item.viaje,
+          form: item.form || ""
+        })
+      });
+
+      const json = await res.json();
+
+      if (res.ok && json.ok !== false) {
+        await eliminarRegistroOffline(item.id);
+        sincronizados += 1;
+      } else {
+        fallidos += 1;
+        console.warn("No se pudo sincronizar:", item, json);
+      }
+
+    } catch (err) {
+      fallidos += 1;
+      console.warn("Sin internet todavía. Pendiente:", item.barcode);
+      break;
+    }
+  }
+
+  if (sincronizados > 0) {
+    setStatus(`Sincronizados ${sincronizados} registros pendientes`, "ok");
+
+    await conservarPosicionPantalla(async () => {
+      await refrescarResumen();
+      await refrescarPivot();
+
+      if (!mostrandoRegistrosHistoricos) {
+        await refrescarDetalle();
+      }
+
+      await refrescarResumenDesdeBD();
+      await cargarContadorGeneralBD();
+    });
+  }
+
+  if (fallidos > 0) {
+    setStatus(`Quedan registros pendientes por sincronizar`, "warn");
+  }
 }
 function setAcumuladoSeguro(valor) {
   if (valor !== ultimoAcumulado) {
@@ -354,6 +442,8 @@ cacheYaRegistrados = [];
 }
 
 function limpiarConsultaGeneral() {
+  limpiarTotalesVariedadGlobal();
+
   setHTML(generalBloqueBody, `
     <tr>
       <td colspan="7" class="empty-row">Selecciona un bloque o variedad para consultar.</td>
@@ -414,6 +504,38 @@ async function cargarBloquesGenerales() {
     console.error("Error cargando bloques generales:", err);
   }
 }
+async function cargarVariedadesGlobales() {
+  if (!variedadGlobalSelect) return;
+
+  try {
+    const res = await fetch("/api/general/variedades");
+    if (!res.ok) return;
+
+    const json = await res.json();
+    if (!json.ok) return;
+
+    const seleccionada = variedadGlobalSelect.value || "";
+
+    variedadGlobalSelect.innerHTML = `
+      <option value="">Seleccionar variedad general</option>
+    `;
+
+    json.data.forEach((variedad) => {
+      const option = document.createElement("option");
+      option.value = variedad;
+      option.textContent = variedad;
+
+      if (String(variedad) === String(seleccionada)) {
+        option.selected = true;
+      }
+
+      variedadGlobalSelect.appendChild(option);
+    });
+
+  } catch (err) {
+    console.error("Error cargando variedades globales:", err);
+  }
+}
 
 async function cargarVariedadesGeneralesPorBloque(bloque, variedadSeleccionada = "") {
   if (!variedadGeneralSelect) return;
@@ -448,6 +570,8 @@ async function cargarVariedadesGeneralesPorBloque(bloque, variedadSeleccionada =
     console.error("Error cargando variedades por bloque:", err);
   }
 }
+
+
 
 async function cargarResumenGeneralPorBloque(bloque, variedad = "") {
   if (!generalBloqueBody) return;
@@ -595,7 +719,171 @@ async function cargarDetalleGeneralPorBloque(bloque, variedad = "") {
     `);
   }
 }
+async function cargarResumenGeneralPorVariedadGlobal(variedad) {
+  if (!generalBloqueBody) return;
 
+  if (!variedad) {
+    limpiarTotalesVariedadGlobal();
+    limpiarConsultaGeneral();
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `/api/general/variedad/${encodeURIComponent(variedad)}`
+    );
+
+    if (!res.ok) {
+      limpiarTotalesVariedadGlobal();
+
+      setHTML(generalBloqueBody, `
+        <tr>
+          <td colspan="7" class="empty-row">Error cargando el resumen de la variedad.</td>
+        </tr>
+      `);
+      return;
+    }
+
+    const json = await res.json();
+
+    if (!json.ok || !Array.isArray(json.data) || !json.data.length) {
+      limpiarTotalesVariedadGlobal();
+
+      setHTML(generalBloqueBody, `
+        <tr>
+          <td colspan="7" class="empty-row">No hay datos para esta variedad.</td>
+        </tr>
+      `);
+      return;
+    }
+
+    const totalTabacos = json.data.reduce((acc, row) => {
+      return acc + Number(row.tabacos || 0);
+    }, 0);
+
+    const totalTallos = json.data.reduce((acc, row) => {
+      return acc + Number(row.suma_tallos || 0);
+    }, 0);
+
+    mostrarTotalesVariedadGlobal(variedad, totalTabacos, totalTallos);
+
+    generalBloqueBody.innerHTML = "";
+
+    json.data.forEach((row) => {
+      const tr = document.createElement("tr");
+
+      tr.innerHTML = `
+        <td>${row.bloque ?? ""}</td>
+        <td>${row.variedad ?? ""}</td>
+        <td>${row.tamano ?? ""}</td>
+        <td>${row.tallos ?? ""}</td>
+        <td>${row.etapa ?? ""}</td>
+        <td class="cell-green">${row.tabacos ?? 0}</td>
+        <td class="cell-blue">${row.suma_tallos ?? 0}</td>
+      `;
+
+      generalBloqueBody.appendChild(tr);
+    });
+
+  } catch (err) {
+    console.error("Error cargando resumen por variedad global:", err);
+
+    limpiarTotalesVariedadGlobal();
+
+    setHTML(generalBloqueBody, `
+      <tr>
+        <td colspan="7" class="empty-row">Error cargando el resumen de la variedad.</td>
+      </tr>
+    `);
+  }
+}
+
+async function cargarDetalleGeneralPorVariedadGlobal(variedad) {
+  if (!generalBloqueDetalleBody) return;
+
+  if (!variedad) {
+    setHTML(generalBloqueDetalleBody, `
+      <tr>
+        <td colspan="13" class="empty-row">Sin datos para mostrar.</td>
+      </tr>
+    `);
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `/api/general/variedad/${encodeURIComponent(variedad)}/detalle`
+    );
+
+    if (!res.ok) {
+      setHTML(generalBloqueDetalleBody, `
+        <tr>
+          <td colspan="13" class="empty-row">Error cargando el detalle de la variedad.</td>
+        </tr>
+      `);
+      return;
+    }
+
+    const json = await res.json();
+
+    if (!json.ok || !json.data.length) {
+      setHTML(generalBloqueDetalleBody, `
+        <tr>
+          <td colspan="13" class="empty-row">No hay registros para esta variedad.</td>
+        </tr>
+      `);
+      return;
+    }
+
+    generalBloqueDetalleBody.innerHTML = "";
+
+    json.data.forEach((row) => {
+      const fecha = row.created_at
+        ? new Date(row.created_at).toLocaleString("es-CO")
+        : "";
+
+      const tr = document.createElement("tr");
+
+      tr.innerHTML = `
+        <td>${fecha}</td>
+        <td>${row.barcode ?? ""}</td>
+        <td>${row.tipo ?? ""}</td>
+        <td>${row.serial ?? ""}</td>
+        <td>${row.variedad ?? ""}</td>
+        <td>${row.bloque ?? ""}</td>
+        <td>${row.tamano ?? ""}</td>
+        <td>${row.tallos ?? ""}</td>
+        <td>${row.etapa ?? ""}</td>
+        <td>${row.form ?? ""}</td>
+        <td>${row.barcode_origen ?? ""}</td>
+        <td>${row.es_reregistro === true ? "Sí" : "No"}</td>
+        <td>
+          <button class="btn-delete-general" data-barcode="${row.barcode}">
+            Eliminar
+          </button>
+        </td>
+      `;
+
+      generalBloqueDetalleBody.appendChild(tr);
+    });
+
+    document.querySelectorAll(".btn-delete-general").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const barcode = btn.dataset.barcode;
+        await eliminarRegistroReal(barcode);
+      });
+    });
+
+  } catch (err) {
+    console.error("Error cargando detalle por variedad global:", err);
+
+    setHTML(generalBloqueDetalleBody, `
+      <tr>
+        <td colspan="13" class="empty-row">Error cargando el detalle de la variedad.</td>
+      </tr>
+    `);
+  }
+}
 async function cargarViajes() {
   const contenedor = document.getElementById("viajes-botones");
   if (!contenedor) return;
@@ -631,6 +919,24 @@ async function cargarViajes() {
     });
   } catch (err) {
     console.error("Error cargando viajes:", err);
+  }
+}
+function limpiarTotalesVariedadGlobal() {
+  setText(nombreVariedadGlobal, "Variedad");
+  setText(totalTabacosVariedadGlobal, 0);
+  setText(totalTallosVariedadGlobal, 0);
+
+  if (resumenVariedadGlobalBox) {
+    resumenVariedadGlobalBox.classList.add("hidden");
+  }
+}
+function mostrarTotalesVariedadGlobal(variedad, totalTabacos, totalTallos) {
+  setText(nombreVariedadGlobal, variedad || "Variedad");
+  setText(totalTabacosVariedadGlobal, totalTabacos || 0);
+  setText(totalTallosVariedadGlobal, totalTallos || 0);
+
+  if (resumenVariedadGlobalBox) {
+    resumenVariedadGlobalBox.classList.remove("hidden");
   }
 }
 
@@ -859,33 +1165,32 @@ async function escanearCodigo(barcode) {
     } catch (networkError) {
       const yaExisteOffline = await existeRegistroOfflinePendiente(barcodeLimpio);
 
-if (yaExisteOffline) {
-  duplicadosSesionActual += 1;
+      if (yaExisteOffline) {
+        duplicadosSesionActual += 1;
 
-  cacheYaRegistrados.unshift({
-    fecha: new Date().toISOString(),
-    barcode: barcodeLimpio,
-    tipo: "",
-    serial: "",
-    variedad: "Pendiente offline",
-    bloque: "Pendiente offline",
-    tamano: "",
-    tallos: "",
-    resultado: "YA_REGISTRADO",
-    observacion: "Este código ya está guardado localmente pendiente de sincronizar"
-  });
+        cacheYaRegistrados.unshift({
+          fecha: new Date().toISOString(),
+          barcode: barcodeLimpio,
+          tipo: "",
+          serial: "",
+          variedad: "Pendiente offline",
+          bloque: "Pendiente offline",
+          tamano: "",
+          tallos: "",
+          resultado: "YA_REGISTRADO",
+          observacion: "Este código ya está guardado localmente pendiente de sincronizar"
+        });
 
-  pintarDuplicadosYErrores();
-  renderYaRegistrados();
+        pintarDuplicadosYErrores();
+        renderYaRegistrados();
 
-  setStatus(`${barcodeLimpio} → YA REGISTRADO OFFLINE`, "warn");
+        setStatus(`${barcodeLimpio} → YA REGISTRADO OFFLINE`, "warn");
+        return;
+      }
 
-  return;
-}
+      await guardarRegistroOffline(payload);
 
-await guardarRegistroOffline(payload);
-
-setStatus(`${barcodeLimpio} → GUARDADO OFFLINE`, "warn");
+      setStatus(`${barcodeLimpio} → GUARDADO OFFLINE`, "warn");
 
       const actual = Number(totalEscaneados?.textContent || 0);
       setText(totalEscaneados, actual + 1);
@@ -975,34 +1280,6 @@ setStatus(`${barcodeLimpio} → GUARDADO OFFLINE`, "warn");
 
         await refrescarResumenDesdeBD();
         await cargarContadorGeneralBD();
-
-        const bloqueSeleccionado = bloqueGeneralSelect?.value || "";
-        const variedadSeleccionada = variedadGeneralSelect?.value || "";
-
-        await cargarBloquesGenerales();
-
-        if (bloqueSeleccionado) {
-          bloqueGeneralSelect.value = bloqueSeleccionado;
-
-          await cargarVariedadesGeneralesPorBloque(
-            bloqueSeleccionado,
-            variedadSeleccionada
-          );
-
-          if (variedadSeleccionada) {
-            variedadGeneralSelect.value = variedadSeleccionada;
-          }
-
-          await cargarResumenGeneralPorBloque(
-            bloqueSeleccionado,
-            variedadSeleccionada
-          );
-
-          await cargarDetalleGeneralPorBloque(
-            bloqueSeleccionado,
-            variedadSeleccionada
-          );
-        }
       });
     }, 250);
 
@@ -1011,7 +1288,6 @@ setStatus(`${barcodeLimpio} → GUARDADO OFFLINE`, "warn");
     setStatus("Error escaneando", "error");
   }
 }
-
 
 async function reregistrarCodigo(barcodeOriginal) {
   if (!viajeActivo) {
@@ -1051,24 +1327,6 @@ async function reregistrarCodigo(barcodeOriginal) {
     console.error("Error en re-registro:", err);
     setStatus("Error en re-registro", "error");
   }
-}
-
-function agregarRegistroOfflineVisual(payload) {
-  const row = {
-    fecha: new Date().toISOString(),
-    barcode: payload.barcode,
-    bloque: "Pendiente",
-    variedad: "Pendiente de sincronizar",
-    tamano: "",
-    tallos: "",
-    form: payload.form || "",
-    resultado: "OFFLINE",
-    observacion: "Guardado localmente. Pendiente de sincronización."
-  };
-
-  cacheDetalle.unshift(row);
-
-  renderDetalle(cacheDetalle);
 }
 
 async function refrescarResumen() {
@@ -1193,7 +1451,7 @@ function refrescarResumenPorVariedad() {
   if (!viajeActivo || !cacheDetalle.length) {
     resumenVariedadBody.innerHTML = `
       <tr>
-        <td colspan="6" class="empty-row">Sin registros por variedad.</td>
+        <td colspan="7" class="empty-row">Sin registros por variedad.</td>
       </tr>
     `;
     return;
@@ -1252,6 +1510,7 @@ function refrescarResumenPorVariedad() {
       <td>${item.bloque}</td>
       <td>${item.variedad}</td>
       <td>${item.tamano || "NA"}</td>
+      <td>${item.form || "-"}</td>
       <td class="cell-green">${item.tabacos}</td>
       <td class="cell-blue">${item.totalTallos}</td>
       <td>
@@ -1315,7 +1574,6 @@ function badgeResultado(resultado) {
   if (resultado === "YA_REGISTRADO") return `<span class="badge badge-dup">YA REGISTRADO</span>`;
   if (resultado === "NO_EXISTE") return `<span class="badge badge-bad">NO EXISTE</span>`;
   if (resultado === "REREGISTRADO") return `<span class="badge badge-ok">RE-REGISTRADO</span>`;
-  if (resultado === "OFFLINE") return `<span class="badge badge-dup">OFFLINE</span>`;
   return resultado || "";
 }
 
@@ -1461,66 +1719,6 @@ async function agregarRegistroManualDesdeResumen(data) {
     setStatus("Error agregando registro manual", "error");
   }
 }
-
-async function sincronizarRegistrosOffline() {
-  const pendientes = await obtenerRegistrosOfflinePendientes();
-
-  if (!pendientes.length) {
-    return;
-  }
-
-  setStatus(`Sincronizando ${pendientes.length} registros pendientes...`, "warn");
-
-  let sincronizados = 0;
-  let fallidos = 0;
-
-  for (const item of pendientes) {
-    try {
-      const res = await fetch("/api/escanear", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          barcode: item.barcode,
-          viaje: item.viaje,
-          form: item.form || ""
-        })
-      });
-
-      const json = await res.json();
-
-      if (res.ok && json.ok !== false) {
-        await eliminarRegistroOffline(item.id);
-        sincronizados += 1;
-      } else {
-        fallidos += 1;
-        console.warn("No se pudo sincronizar:", item, json);
-      }
-
-    } catch (err) {
-      fallidos += 1;
-      console.warn("Sin internet todavía. Pendiente:", item.barcode);
-      break;
-    }
-  }
-
-  if (sincronizados > 0) {
-    setStatus(`Sincronizados ${sincronizados} registros pendientes`, "ok");
-
-    await conservarPosicionPantalla(async () => {
-      await refrescarResumen();
-      await refrescarPivot();
-      await refrescarDetalle();
-      await refrescarResumenDesdeBD();
-      await cargarContadorGeneralBD();
-    });
-  }
-
-  if (fallidos > 0) {
-    setStatus(`Quedan ${fallidos} registros pendientes por sincronizar`, "warn");
-  }
-}
 async function quitarRegistroManualDesdeResumen(data) {
   if (!viajeActivo) {
     setStatus("Debes activar un viaje antes de quitar registros", "warn");
@@ -1625,9 +1823,9 @@ function usuarioEstaEditandoCampo() {
   return false;
 }
 
-function obtenerNumeroDesdeTecla(e) {
-  if (/^\d$/.test(e.key)) {
-    return e.key;
+function obtenerCaracterDesdeTecla(e) {
+  if (/^[a-zA-Z0-9]$/.test(e.key)) {
+    return e.key.toUpperCase();
   }
 
   if (/^Numpad\d$/.test(e.code)) {
@@ -1639,20 +1837,26 @@ function obtenerNumeroDesdeTecla(e) {
 
 function encolarCodigo(codigoRaw) {
   const codigo = String(codigoRaw || "")
-    .replace(/[^\d]/g, "")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .toUpperCase()
     .trim();
 
   if (!codigo) return;
 
-  if (codigo.length < 2) {
-    setStatus(`Código demasiado corto: ${codigo}`, "warn");
+  const esNumero = /^\d{2,}$/.test(codigo);
+
+  // Acepta letra + número + cualquier cantidad de números después
+  // Ejemplos válidos: A2, A2123, A399999, B14567
+  const esLetraNumeroConSerial = /^[A-Z]\d+$/i.test(codigo);
+
+  if (!esNumero && !esLetraNumeroConSerial) {
+    setStatus(`Código inválido: ${codigo}`, "warn");
     return;
   }
 
   colaCodigos.push(codigo);
   procesarColaCodigos();
 }
-
 async function procesarColaCodigos() {
   if (lectorProcesando) return;
 
@@ -1679,16 +1883,16 @@ document.addEventListener("keydown", async (e) => {
 
   if (usuarioEstaEditandoCampo()) return;
 
-  const numero = obtenerNumeroDesdeTecla(e);
+  const caracter = obtenerCaracterDesdeTecla(e);
 
-  if (numero !== null) {
-    e.preventDefault();
+if (caracter !== null) {
+  e.preventDefault();
 
-    lectorBuffer += numero;
-    mostrarLectorGlobal();
+  lectorBuffer += caracter;
+  mostrarLectorGlobal();
 
-    return;
-  }
+  return;
+}
 
   if (e.key === "Backspace") {
     if (!lectorBuffer) return;
@@ -1729,8 +1933,8 @@ document.addEventListener("keydown", async (e) => {
 if (barcodeInput) {
   barcodeInput.addEventListener("input", () => {
     const valor = String(barcodeInput.value || "")
-      .replace(/[^\d]/g, "");
-
+  .replace(/[^A-Za-z0-9]/g, "")
+  .toUpperCase();
     if (!valor) return;
 
     lectorBuffer = valor;
@@ -2023,20 +2227,6 @@ if (modalYaRegistrados) {
   });
 }
 
-if (btnToggleDetalleEscaneado && detalleEscaneadoContenido) {
-  btnToggleDetalleEscaneado.addEventListener("click", () => {
-    const estaOculto = detalleEscaneadoContenido.style.display === "none";
-
-    if (estaOculto) {
-      detalleEscaneadoContenido.style.display = "block";
-      btnToggleDetalleEscaneado.textContent = "Ocultar";
-    } else {
-      detalleEscaneadoContenido.style.display = "none";
-      btnToggleDetalleEscaneado.textContent = "Mostrar";
-    }
-  });
-}
-
 if (finalizarBtn) {
   finalizarBtn.addEventListener("click", finalizarViaje);
 }
@@ -2058,21 +2248,32 @@ if (variedadGeneralSelect) {
     const bloque = bloqueGeneralSelect?.value || "";
     const variedad = variedadGeneralSelect.value;
 
+    limpiarTotalesVariedadGlobal();
+
+    if (variedadGlobalSelect) {
+      variedadGlobalSelect.value = "";
+    }
+
     guardarEstadoUI();
 
-    await conservarPosicionPantalla(async () => {
-      await cargarResumenGeneralPorBloque(bloque, variedad);
-      await cargarDetalleGeneralPorBloque(bloque, variedad);
-    });
+    await cargarResumenGeneralPorBloque(bloque, variedad);
+    await cargarDetalleGeneralPorBloque(bloque, variedad);
   });
 }
 if (bloqueGeneralSelect) {
-
   bloqueGeneralSelect.addEventListener("change", async () => {
-
     const bloque = bloqueGeneralSelect.value;
 
-    if (!bloque) return;
+    limpiarTotalesVariedadGlobal();
+
+    if (variedadGlobalSelect) {
+      variedadGlobalSelect.value = "";
+    }
+
+    if (!bloque) {
+      limpiarConsultaGeneral();
+      return;
+    }
 
     guardarEstadoUI();
 
@@ -2086,18 +2287,32 @@ if (bloqueGeneralSelect) {
     await cargarDetalleGeneralPorBloque(bloque, "");
   });
 }
+if (variedadGlobalSelect) {
+  variedadGlobalSelect.addEventListener("change", async () => {
+    const variedad = variedadGlobalSelect.value || "";
 
-if (variedadGeneralSelect) {
+    if (!variedad) {
+      limpiarTotalesVariedadGlobal();
+      limpiarConsultaGeneral();
+      return;
+    }
 
-  variedadGeneralSelect.addEventListener("change", async () => {
+    if (bloqueGeneralSelect) {
+      bloqueGeneralSelect.value = "";
+    }
 
-    const bloque = bloqueGeneralSelect?.value || "";
-    const variedad = variedadGeneralSelect.value;
+    if (variedadGeneralSelect) {
+      variedadGeneralSelect.innerHTML = `
+        <option value="">Seleccionar variedad</option>
+      `;
+    }
 
     guardarEstadoUI();
 
-    await cargarResumenGeneralPorBloque(bloque, variedad);
-    await cargarDetalleGeneralPorBloque(bloque, variedad);
+    await conservarPosicionPantalla(async () => {
+      await cargarResumenGeneralPorVariedadGlobal(variedad);
+      await cargarDetalleGeneralPorVariedadGlobal(variedad);
+    });
   });
 }
 /////////////////////// AUTOFOCUS ESCANER ///////////////////////////////
@@ -2210,10 +2425,25 @@ async function activarViajeInicialAutomatico() {
 
   await activarViaje(nombreViaje);
 }
+function actualizarEstadoInternet() {
+  if (!internetStatus) return;
+
+  if (navigator.onLine) {
+    internetStatus.textContent = "En línea";
+    internetStatus.classList.remove("offline");
+    internetStatus.classList.add("online");
+  } else {
+    internetStatus.textContent = "Sin internet - modo Offline";
+    internetStatus.classList.remove("online");
+    internetStatus.classList.add("offline");
+  }
+}
 
 window.addEventListener("load", async () => {
 
   if (!pedirAcceso()) return;
+
+  actualizarEstadoInternet();
 
   setTimeout(() => {
     focusBarcodeSeguro();
@@ -2231,19 +2461,24 @@ window.addEventListener("load", async () => {
   }, 1500);
 
   await cargarContadorGeneralBD();
-  await cargarBloquesGenerales();
-  await cargarViajes();
+await cargarBloquesGenerales();
+await cargarVariedadesGlobales();
+await cargarViajes();
 
   limpiarConsultaGeneral();
 
-  // Activa automáticamente el Viaje 1 al ingresar
   await activarViajeInicialAutomatico();
+
   if (navigator.onLine) {
-  setTimeout(async () => {
-    await sincronizarRegistrosOffline();
-  }, 1500);
-}
-  window.addEventListener("online", async () => {
+    setTimeout(async () => {
+      await sincronizarRegistrosOffline();
+    }, 1500);
+  }
+
+});
+
+window.addEventListener("online", async () => {
+  actualizarEstadoInternet();
   setStatus("Internet recuperado. Sincronizando pendientes...", "warn");
 
   try {
@@ -2253,5 +2488,8 @@ window.addEventListener("load", async () => {
     setStatus("Error sincronizando registros pendientes", "error");
   }
 });
-});
 
+window.addEventListener("offline", () => {
+  actualizarEstadoInternet();
+  setStatus("Sin internet. El sistema seguirá guardando en modo offline.", "warn");
+});
