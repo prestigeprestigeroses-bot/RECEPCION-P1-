@@ -128,7 +128,7 @@ function setHTML(el, value) {
 // =====================================================
 
 const OFFLINE_DB_NAME = "poscosecha_offline_db";
-const OFFLINE_DB_VERSION = 1;
+const OFFLINE_DB_VERSION = 2;
 const OFFLINE_STORE = "registros_pendientes";
 
 function abrirDBOffline() {
@@ -136,20 +136,30 @@ function abrirDBOffline() {
     const request = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
 
     request.onupgradeneeded = (event) => {
-      const db = event.target.result;
+  const db = event.target.result;
 
-      if (!db.objectStoreNames.contains(OFFLINE_STORE)) {
-        const store = db.createObjectStore(OFFLINE_STORE, {
-          keyPath: "id",
-          autoIncrement: true
-        });
+  if (!db.objectStoreNames.contains(OFFLINE_STORE)) {
+    const store = db.createObjectStore(OFFLINE_STORE, {
+      keyPath: "id",
+      autoIncrement: true
+    });
 
-        store.createIndex("estado", "estado", { unique: false });
-        store.createIndex("barcode", "barcode", { unique: false });
-        store.createIndex("viaje", "viaje", { unique: false });
-        store.createIndex("created_at_local", "created_at_local", { unique: false });
-      }
-    };
+    store.createIndex("estado", "estado", { unique: false });
+    store.createIndex("barcode", "barcode", { unique: false });
+    store.createIndex("viaje", "viaje", { unique: false });
+    store.createIndex("created_at_local", "created_at_local", { unique: false });
+  }
+
+  if (!db.objectStoreNames.contains("catalogo_codigos")) {
+    const catalogo = db.createObjectStore("catalogo_codigos", {
+      keyPath: "barcode"
+    });
+
+    catalogo.createIndex("variedad", "variedad", { unique: false });
+    catalogo.createIndex("bloque", "bloque", { unique: false });
+    catalogo.createIndex("created_at", "created_at", { unique: false });
+  }
+};
 
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -205,6 +215,78 @@ async function eliminarRegistroOffline(id) {
     request.onerror = () => reject(request.error);
   });
 }
+async function guardarCatalogoOffline(registros) {
+  const db = await abrirDBOffline();
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("catalogo_codigos", "readwrite");
+    const store = tx.objectStore("catalogo_codigos");
+
+    registros.forEach((row) => {
+      const barcode = String(row.barcode || "")
+        .replace(/[^A-Za-z0-9]/g, "")
+        .toUpperCase()
+        .trim();
+
+      if (!barcode) return;
+
+      store.put({
+        barcode,
+        tipo: row.tipo || "",
+        serial: row.serial || "",
+        variedad: row.variedad || "",
+        bloque: row.bloque || "",
+        tamano: row.tamano || "",
+        tallos: row.tallos || "",
+        etapa: row.etapa || "",
+        form: row.form || "",
+        created_at: row.created_at || new Date().toISOString()
+      });
+    });
+
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function buscarCodigoEnCatalogoOffline(barcode) {
+  const db = await abrirDBOffline();
+
+  const codigo = String(barcode || "")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .toUpperCase()
+    .trim();
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("catalogo_codigos", "readonly");
+    const store = tx.objectStore("catalogo_codigos");
+    const request = store.get(codigo);
+
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function actualizarCatalogoOffline() {
+  if (!navigator.onLine) return;
+
+  try {
+    const res = await fetch("/api/offline/catalogo");
+
+    if (!res.ok) return;
+
+    const json = await res.json();
+
+    if (!json.ok || !Array.isArray(json.data)) return;
+
+    await guardarCatalogoOffline(json.data);
+
+    console.log(`Catálogo offline actualizado: ${json.data.length} registros`);
+
+  } catch (err) {
+    console.warn("No se pudo actualizar catálogo offline:", err);
+  }
+}
 
 async function existeRegistroOfflinePendiente(barcode) {
   const pendientes = await obtenerRegistrosOfflinePendientes();
@@ -228,10 +310,10 @@ function agregarRegistroOfflineVisual(payload) {
   const row = {
     fecha: new Date().toISOString(),
     barcode: payload.barcode,
-    bloque: "Pendiente",
-    variedad: "Pendiente de sincronizar",
-    tamano: "",
-    tallos: "",
+    bloque: payload.bloque || "Sin datos offline",
+    variedad: payload.variedad || "Sin datos offline",
+    tamano: payload.tamano || "",
+    tallos: payload.tallos || "",
     form: payload.form || "",
     resultado: "OFFLINE",
     observacion: "Guardado localmente. Pendiente de sincronización."
@@ -1179,45 +1261,69 @@ async function escanearCodigo(barcode) {
       data = await res.json();
 
     } catch (networkError) {
-      const yaExisteOffline = await existeRegistroOfflinePendiente(barcodeLimpio);
+  const yaExisteOffline = await existeRegistroOfflinePendiente(barcodeLimpio);
 
-      if (yaExisteOffline) {
-        duplicadosSesionActual += 1;
+  if (yaExisteOffline) {
+    duplicadosSesionActual += 1;
 
-        cacheYaRegistrados.unshift({
-          fecha: new Date().toISOString(),
-          barcode: barcodeLimpio,
-          tipo: "",
-          serial: "",
-          variedad: "Pendiente offline",
-          bloque: "Pendiente offline",
-          tamano: "",
-          tallos: "",
-          resultado: "YA_REGISTRADO",
-          observacion: "Este código ya está guardado localmente pendiente de sincronizar"
-        });
+    cacheYaRegistrados.unshift({
+      fecha: new Date().toISOString(),
+      barcode: barcodeLimpio,
+      tipo: "",
+      serial: "",
+      variedad: "Pendiente offline",
+      bloque: "Pendiente offline",
+      tamano: "",
+      tallos: "",
+      resultado: "YA_REGISTRADO",
+      observacion: "Este código ya está guardado localmente pendiente de sincronizar"
+    });
 
-        pintarDuplicadosYErrores();
-        renderYaRegistrados();
+    pintarDuplicadosYErrores();
+    renderYaRegistrados();
 
-        setStatus(`${barcodeLimpio} → YA REGISTRADO OFFLINE`, "warn");
-        return;
-      }
+    setStatus(`${barcodeLimpio} → YA REGISTRADO OFFLINE`, "warn");
+    return;
+  }
 
-      await guardarRegistroOffline(payload);
+  const datosLocales = await buscarCodigoEnCatalogoOffline(barcodeLimpio);
 
-      setStatus(`${barcodeLimpio} → GUARDADO OFFLINE`, "warn");
+  await guardarRegistroOffline({
+    ...payload,
+    variedad: datosLocales?.variedad || "",
+    bloque: datosLocales?.bloque || "",
+    tamano: datosLocales?.tamano || "",
+    tallos: datosLocales?.tallos || "",
+    etapa: datosLocales?.etapa || "",
+    tipo: datosLocales?.tipo || "",
+    serial: datosLocales?.serial || ""
+  });
 
-      const actual = Number(totalEscaneados?.textContent || 0);
-      setText(totalEscaneados, actual + 1);
+  setStatus(
+    datosLocales
+      ? `${barcodeLimpio} → GUARDADO OFFLINE (${datosLocales.variedad})`
+      : `${barcodeLimpio} → GUARDADO OFFLINE SIN DATOS`,
+    datosLocales ? "warn" : "error"
+  );
 
-      const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
-      setAcumuladoSeguro(acumulado + 1);
+  const actual = Number(totalEscaneados?.textContent || 0);
+  setText(totalEscaneados, actual + 1);
 
-      agregarRegistroOfflineVisual(payload);
+  const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
+  setAcumuladoSeguro(acumulado + 1);
 
-      return;
-    }
+  agregarRegistroOfflineVisual({
+    ...payload,
+    variedad: datosLocales?.variedad || "Sin datos offline",
+    bloque: datosLocales?.bloque || "Sin datos offline",
+    tamano: datosLocales?.tamano || "",
+    tallos: datosLocales?.tallos || "",
+    form: datosLocales?.form || payload.form || "",
+    resultado: "OFFLINE"
+  });
+
+  return;
+}
 
     if (!res || !res.ok || !data || data.ok === false) {
       const mensaje =
@@ -2481,6 +2587,7 @@ window.addEventListener("load", async () => {
 await cargarBloquesGenerales();
 await cargarVariedadesGlobales();
 await cargarViajes();
+await actualizarCatalogoOffline();
 setInterval(async () => {
   await cargarVariedadesGlobales();
 }, 5000);
@@ -2499,9 +2606,10 @@ setInterval(async () => {
 
 window.addEventListener("online", async () => {
   actualizarEstadoInternet();
-  setStatus("Internet recuperado. Sincronizando pendientes...", "warn");
+  setStatus("Internet recuperado. Actualizando y sincronizando...", "warn");
 
   try {
+    await actualizarCatalogoOffline();
     await sincronizarRegistrosOffline();
   } catch (err) {
     console.error("Error sincronizando al volver internet:", err);

@@ -60,6 +60,41 @@ function parseCode(codeRaw) {
   return { barcode: code, tipo, serial };
 }
 
+app.get("/api/offline/catalogo", async (req, res) => {
+  try {
+    const q = `
+      SELECT
+        barcode,
+        tipo,
+        serial,
+        variedad,
+        bloque,
+        tamano,
+        tallos,
+        etapa,
+        form,
+        created_at
+      FROM registros
+      WHERE created_at::date = CURRENT_DATE
+      ORDER BY created_at DESC
+    `;
+
+    const r = await pool.query(q);
+
+    res.json({
+      ok: true,
+      data: r.rows
+    });
+
+  } catch (err) {
+    console.error("Error cargando catálogo offline:", err);
+    res.status(500).json({
+      ok: false,
+      error: "Error cargando catálogo offline"
+    });
+  }
+});
+
 app.get("/api/viaje-activo", async (_req, res) => {
   try {
     const r = await pool.query(`
