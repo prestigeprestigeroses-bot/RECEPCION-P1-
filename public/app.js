@@ -135,7 +135,7 @@ function normalizarBarcode(valor) {
 // =====================================================
 
 const OFFLINE_DB_NAME = "poscosecha_offline_db";
-const OFFLINE_DB_VERSION = 1;
+const OFFLINE_DB_VERSION = 2;
 const OFFLINE_STORE = "registros_pendientes";
 
 function abrirDBOffline() {
