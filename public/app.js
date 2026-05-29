@@ -57,6 +57,7 @@ let escaneando = false;
 let ultimoAcumulado = null;
 let mostrandoRegistrosHistoricos = false;
 let timerOcultarRegistrosHistoricos = null;
+let timerRefrescoPostEscaneo = null;
 
 let duplicadosSesionActual = 0;
 let erroresSesionActual = 0;
@@ -130,6 +131,51 @@ function setText(el, value) {
 
 function setHTML(el, value) {
   if (el) el.innerHTML = value;
+}
+
+function programarRefrescoPostEscaneo() {
+  if (timerRefrescoPostEscaneo) {
+    clearTimeout(timerRefrescoPostEscaneo);
+  }
+
+  timerRefrescoPostEscaneo = setTimeout(() => {
+    timerRefrescoPostEscaneo = null;
+
+    conservarPosicionPantalla(async () => {
+      await refrescarResumenDesdeBD();
+      await refrescarPivot();
+      await cargarContadorGeneralBD();
+    });
+  }, 900);
+}
+
+function agregarRegistroProcesadoVisual(data, resultado) {
+  if (!data || !["OK", "REREGISTRADO"].includes(resultado)) return;
+
+  const row = {
+    fecha: new Date().toISOString(),
+    viaje: viajeActivo,
+    barcode: data.barcode || "",
+    tipo: data.tipo || "",
+    serial: data.serial || "",
+    bloque: data.bloque || "",
+    variedad: data.variedad || "",
+    tamano: data.tamano || "",
+    tallos: data.tallos || "",
+    etapa: data.etapa || "Ingreso",
+    form: data.form || formInput?.value?.trim() || "",
+    resultado,
+    observacion: data.observacion || "",
+    barcode_origen: data.barcode_origen || null,
+  };
+
+  cacheDetalle.unshift(row);
+  cacheDetalle = cacheDetalle.slice(0, 120);
+
+  if (!mostrandoRegistrosHistoricos) {
+    renderDetalle(cacheDetalle);
+    refrescarResumenPorVariedad();
+  }
 }
 
 function normalizarBarcode(valor) {
@@ -1459,6 +1505,7 @@ async function escanearCodigo(barcode) {
 
       const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
       setAcumuladoSeguro(acumulado + 1);
+      agregarRegistroProcesadoVisual(data.data, "OK");
 
     } else if (data.resultado === "YA_REGISTRADO") {
       duplicadosSesionActual += 1;
@@ -1489,6 +1536,7 @@ async function escanearCodigo(barcode) {
 
       const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
       setAcumuladoSeguro(acumulado + 1);
+      agregarRegistroProcesadoVisual(data.data, "REREGISTRADO");
 
     } else if (data.resultado === "NO_EXISTE") {
       erroresSesionActual += 1;
@@ -1500,19 +1548,7 @@ async function escanearCodigo(barcode) {
       setStatus(`Escaneo procesado: ${barcodeLimpio}`, "ok");
     }
 
-    setTimeout(() => {
-      conservarPosicionPantalla(async () => {
-        await refrescarResumen();
-        await refrescarPivot();
-
-        if (!mostrandoRegistrosHistoricos) {
-          await refrescarDetalle();
-        }
-
-        await refrescarResumenDesdeBD();
-        await cargarContadorGeneralBD();
-      });
-    }, 250);
+    programarRefrescoPostEscaneo();
 
   } catch (error) {
     console.error("Error escaneando:", error);
