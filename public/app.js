@@ -1981,9 +1981,14 @@ async function agregarRegistroManualDesdeResumen(data) {
       "ok"
     );
 
-    await conservarPosicionPantalla(async () => {
-      await refrescarTodo();
-    });
+    const actual = Number(totalEscaneados?.textContent || 0);
+    setText(totalEscaneados, actual + 1);
+
+    const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
+    setAcumuladoSeguro(acumulado + 1);
+
+    agregarRegistroProcesadoVisual(json.data, "OK");
+    programarRefrescoPostEscaneo();
   } catch (err) {
     console.error("Error agregando registro manual:", err);
     setStatus("Error agregando registro manual", "error");
@@ -2033,13 +2038,7 @@ async function quitarRegistroManualDesdeResumen(data) {
       "ok"
     );
 
-    // Refresco real desde BD para actualizar tabla, totales y detalle
-    await conservarPosicionPantalla(async () => {
-      await refrescarDetalle();
-      await refrescarPivot();
-      await refrescarResumenDesdeBD();
-      await cargarContadorGeneralBD();
-    });
+    programarRefrescoPostEscaneo();
 
   } catch (err) {
     console.error("Error quitando registro manual:", err);
