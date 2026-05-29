@@ -441,3 +441,15 @@ th {
 #resumen .right-stack td:last-child .btn-add-manual {
   margin-right: 8px !important;
 }
+
+.collapsed-panel {
+  display: none !important;
+}
+
+#detalle .section-header {
+  margin-bottom: 14px;
+}
+
+#detalle .section-header h2 {
+  margin: 0;
+}

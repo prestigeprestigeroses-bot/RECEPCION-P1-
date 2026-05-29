@@ -106,11 +106,20 @@ const generalBloqueDetalleBody = document.getElementById("general-bloque-detalle
 
 const btnToggleDetalleFiltro = document.getElementById("btnToggleDetalleFiltro");
 const detalleFiltroBox = document.getElementById("detalleFiltroBox");
+const btnToggleUltimosRegistros = document.getElementById("btnToggleUltimosRegistros");
+const ultimosRegistrosBox = document.getElementById("ultimosRegistrosBox");
 
 if (btnToggleDetalleFiltro && detalleFiltroBox) {
   btnToggleDetalleFiltro.addEventListener("click", () => {
     const isOpen = detalleFiltroBox.classList.toggle("open");
     btnToggleDetalleFiltro.textContent = isOpen ? "Ocultar detalle" : "Mostrar detalle";
+  });
+}
+
+if (btnToggleUltimosRegistros && ultimosRegistrosBox) {
+  btnToggleUltimosRegistros.addEventListener("click", () => {
+    const isHidden = ultimosRegistrosBox.classList.toggle("collapsed-panel");
+    btnToggleUltimosRegistros.textContent = isHidden ? "Mostrar" : "Ocultar";
   });
 }
 
