@@ -367,21 +367,18 @@ tbody tr:hover {
 #resumen .right-stack td:nth-child(5),
 #resumen .right-stack th:nth-child(6),
 #resumen .right-stack td:nth-child(6) {
-  width: 15%;
+  width: 14%;
   text-align: center;
 }
 
 #resumen .right-stack th:nth-child(7),
 #resumen .right-stack td:nth-child(7) {
-  width: 14%;
+  width: 18%;
   text-align: center;
 }
 
 #resumen .right-stack td:last-child {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: center;
+  white-space: nowrap !important;
 }
 
 #resumen .right-stack .btn-add-manual,
@@ -393,4 +390,54 @@ tbody tr:hover {
   padding: 0 !important;
   margin: 0 !important;
   font-size: 1.25rem !important;
+}
+
+/* Correccion de contraste y acciones sin sobremontarse */
+th {
+  color: #f7fff9 !important;
+}
+
+.metric-label,
+.travel-label,
+.scanner-readout-label,
+.quick-help-item,
+.section-kicker,
+.page-sub,
+.travel-sub,
+.mini-stat .label,
+.empty-row {
+  color: #d7fbe1 !important;
+}
+
+.metric-value,
+.travel-value,
+.mini-stat .value,
+.cell-green,
+.cell-blue {
+  color: #ffffff !important;
+}
+
+.cell-green {
+  background: #14532d !important;
+}
+
+.cell-blue {
+  background: #164e63 !important;
+}
+
+.badge-ok,
+.badge-offline {
+  color: #ffffff !important;
+}
+
+#resumen .right-stack td:last-child .btn-add-manual,
+#resumen .right-stack td:last-child .btn-remove-manual {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+
+#resumen .right-stack td:last-child .btn-add-manual {
+  margin-right: 8px !important;
 }
