@@ -178,6 +178,16 @@ function agregarRegistroProcesadoVisual(data, resultado) {
   }
 }
 
+function quitarRegistroVisualPorBarcode(barcode) {
+  const codigo = normalizarBarcode(barcode);
+  cacheDetalle = cacheDetalle.filter((row) => normalizarBarcode(row.barcode) !== codigo);
+
+  if (!mostrandoRegistrosHistoricos) {
+    renderDetalle(cacheDetalle);
+    refrescarResumenPorVariedad();
+  }
+}
+
 function normalizarBarcode(valor) {
   return String(valor || "")
     .replace(/[^A-Za-z0-9]/g, "")
@@ -1951,6 +1961,31 @@ async function agregarRegistroManualDesdeResumen(data) {
     return;
   }
 
+  const barcodeTemporal = `MANUAL-${Date.now()}`;
+  const actualAntes = Number(totalEscaneados?.textContent || 0);
+  const acumuladoAntes = Number(totalAcumuladoGeneral?.textContent || 0);
+
+  setText(totalEscaneados, actualAntes + 1);
+  setAcumuladoSeguro(acumuladoAntes + 1);
+
+  agregarRegistroProcesadoVisual({
+    barcode: barcodeTemporal,
+    tipo: data.tipo || "",
+    serial: "",
+    bloque: data.bloque,
+    variedad: data.variedad,
+    tamano: data.tamano,
+    tallos: data.tallos,
+    form: data.form,
+    etapa: data.etapa || "Ingreso",
+    observacion: "Agregando manualmente..."
+  }, "OK");
+
+  setStatus(
+    `Agregando: ${data.variedad} / ${data.tamano || "NA"} / ${data.tallos} tallos`,
+    "warn"
+  );
+
   try {
     const res = await fetch("/api/registros/manual", {
       method: "POST",
@@ -1972,6 +2007,9 @@ async function agregarRegistroManualDesdeResumen(data) {
     const json = await res.json();
 
     if (!res.ok || !json.ok) {
+      quitarRegistroVisualPorBarcode(barcodeTemporal);
+      setText(totalEscaneados, actualAntes);
+      setAcumuladoSeguro(acumuladoAntes);
       setStatus(json.error || "No se pudo agregar el registro manual", "error");
       return;
     }
@@ -1981,15 +2019,13 @@ async function agregarRegistroManualDesdeResumen(data) {
       "ok"
     );
 
-    const actual = Number(totalEscaneados?.textContent || 0);
-    setText(totalEscaneados, actual + 1);
-
-    const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
-    setAcumuladoSeguro(acumulado + 1);
-
+    quitarRegistroVisualPorBarcode(barcodeTemporal);
     agregarRegistroProcesadoVisual(json.data, "OK");
     programarRefrescoPostEscaneo();
   } catch (err) {
+    quitarRegistroVisualPorBarcode(barcodeTemporal);
+    setText(totalEscaneados, actualAntes);
+    setAcumuladoSeguro(acumuladoAntes);
     console.error("Error agregando registro manual:", err);
     setStatus("Error agregando registro manual", "error");
   }
