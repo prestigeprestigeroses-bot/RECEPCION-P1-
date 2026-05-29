@@ -448,6 +448,11 @@ tbody tr:hover {
   color: var(--danger) !important;
 }
 
+.badge-offline {
+  background: var(--brand-soft) !important;
+  color: var(--brand-dark) !important;
+}
+
 .ya-registrado-panel {
   background: var(--warning-soft) !important;
   border: 1px solid #f3cf78 !important;
