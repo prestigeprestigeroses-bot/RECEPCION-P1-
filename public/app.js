@@ -122,13 +122,6 @@ function setText(el, value) {
 function setHTML(el, value) {
   if (el) el.innerHTML = value;
 }
-
-function normalizarBarcode(valor) {
-  return String(valor || "")
-    .replace(/[^A-Za-z0-9]/g, "")
-    .toUpperCase()
-    .trim();
-}
 // =====================================================
 // BASE LOCAL OFFLINE - INDEXEDDB
 // Guarda registros cuando no hay internet
@@ -178,10 +171,7 @@ async function guardarRegistroOffline(payload) {
 
     const request = store.add(registro);
 
-    request.onsuccess = () => resolve({
-      ...registro,
-      id: request.result
-    });
+    request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
@@ -203,18 +193,6 @@ async function obtenerRegistrosOfflinePendientes() {
   });
 }
 
-async function obtenerRegistrosOfflinePendientesPorViaje(viaje) {
-  const pendientes = await obtenerRegistrosOfflinePendientes();
-  const viajeTexto = String(viaje || "").trim();
-
-  return pendientes.filter((item) => String(item.viaje || "").trim() === viajeTexto);
-}
-
-async function contarRegistrosOfflinePendientes(viaje) {
-  const pendientes = await obtenerRegistrosOfflinePendientesPorViaje(viaje);
-  return pendientes.length;
-}
-
 async function eliminarRegistroOffline(id) {
   const db = await abrirDBOffline();
 
@@ -231,88 +209,37 @@ async function eliminarRegistroOffline(id) {
 async function existeRegistroOfflinePendiente(barcode) {
   const pendientes = await obtenerRegistrosOfflinePendientes();
 
-  const codigo = normalizarBarcode(barcode);
+  const codigo = String(barcode || "")
+    .replace(/[^A-Za-z0-9]/g, "")
+    .toUpperCase()
+    .trim();
 
   return pendientes.some((item) => {
-    const itemBarcode = normalizarBarcode(item.barcode);
+    const itemBarcode = String(item.barcode || "")
+      .replace(/[^A-Za-z0-9]/g, "")
+      .toUpperCase()
+      .trim();
 
     return itemBarcode === codigo;
   });
 }
 
-function crearFilaOfflineVisual(registro) {
-  return {
-    id_offline: registro.id,
-    fecha: registro.created_at_local || new Date().toISOString(),
-    viaje: registro.viaje || viajeActivo,
-    barcode: registro.barcode,
+function agregarRegistroOfflineVisual(payload) {
+  const row = {
+    fecha: new Date().toISOString(),
+    barcode: payload.barcode,
     bloque: "Pendiente",
     variedad: "Pendiente de sincronizar",
     tamano: "",
     tallos: "",
-    form: registro.form || "",
+    form: payload.form || "",
     resultado: "OFFLINE",
-    observacion: "Guardado localmente. Se sincronizará cuando vuelva internet."
+    observacion: "Guardado localmente. Pendiente de sincronización."
   };
-}
 
-function agregarRegistroOfflineVisual(registro) {
-  const row = crearFilaOfflineVisual(registro);
-  const yaExiste = cacheDetalle.some((item) => {
-    if (row.id_offline && item.id_offline === row.id_offline) return true;
-    return normalizarBarcode(item.barcode) === normalizarBarcode(row.barcode) &&
-      item.resultado === "OFFLINE";
-  });
-
-  if (!yaExiste) {
-    cacheDetalle.unshift(row);
-  }
-
+  cacheDetalle.unshift(row);
   renderDetalle(cacheDetalle);
 }
-
-async function pintarPendientesOfflineDelViaje() {
-  if (!viajeActivo) return [];
-
-  const pendientes = await obtenerRegistrosOfflinePendientesPorViaje(viajeActivo);
-  const filasOffline = pendientes
-    .sort((a, b) => new Date(b.created_at_local || 0) - new Date(a.created_at_local || 0))
-    .map(crearFilaOfflineVisual);
-
-  const barcodesOffline = new Set(filasOffline.map((row) => normalizarBarcode(row.barcode)));
-  const detalleSinOfflineViejo = cacheDetalle.filter((row) => {
-    if (row.resultado !== "OFFLINE") return true;
-    return barcodesOffline.has(normalizarBarcode(row.barcode));
-  });
-
-  const detalleServidor = detalleSinOfflineViejo.filter((row) => row.resultado !== "OFFLINE");
-
-  cacheDetalle = [
-    ...filasOffline,
-    ...detalleServidor
-  ];
-
-  if (!mostrandoRegistrosHistoricos) {
-    renderDetalle(cacheDetalle);
-    refrescarResumenPorVariedad();
-  }
-
-  return pendientes;
-}
-
-async function actualizarTotalesConPendientesOffline(baseTotalActual = null, baseAcumuladoActual = null) {
-  if (!viajeActivo) return;
-
-  const pendientes = await contarRegistrosOfflinePendientes(viajeActivo);
-  if (baseTotalActual !== null) {
-    setText(totalEscaneados, Number(baseTotalActual || 0) + pendientes);
-  }
-
-  if (baseAcumuladoActual !== null) {
-    setAcumuladoSeguro(Number(baseAcumuladoActual || 0) + pendientes);
-  }
-}
-
 async function sincronizarRegistrosOffline() {
   const pendientes = await obtenerRegistrosOfflinePendientes();
 
@@ -367,16 +294,12 @@ async function sincronizarRegistrosOffline() {
         await refrescarDetalle();
       }
 
-      await pintarPendientesOfflineDelViaje();
-
       await refrescarResumenDesdeBD();
       await cargarContadorGeneralBD();
     });
   }
 
   if (fallidos > 0) {
-    await pintarPendientesOfflineDelViaje();
-    await actualizarTotalesConPendientesOffline();
     setStatus(`Quedan registros pendientes por sincronizar`, "warn");
   }
 }
@@ -585,34 +508,19 @@ async function cargarVariedadesGlobales() {
   if (!variedadGlobalSelect) return;
 
   try {
-    const seleccionada = variedadGlobalSelect.value || "";
-
     const res = await fetch("/api/general/variedades");
     if (!res.ok) return;
 
     const json = await res.json();
-    if (!json.ok || !Array.isArray(json.data)) return;
+    if (!json.ok) return;
 
-    const opcionesActuales = Array.from(variedadGlobalSelect.options)
-      .map((option) => option.value);
-
-    const nuevasVariedades = json.data
-      .map((v) => String(v || "").trim())
-      .filter((v) => v);
-
-    // Evita reconstruir el select si no cambió nada
-    const actualesSinVacio = opcionesActuales.filter((v) => v);
-    const mismasOpciones =
-      actualesSinVacio.length === nuevasVariedades.length &&
-      actualesSinVacio.every((v, i) => v === nuevasVariedades[i]);
-
-    if (mismasOpciones) return;
+    const seleccionada = variedadGlobalSelect.value || "";
 
     variedadGlobalSelect.innerHTML = `
       <option value="">Seleccionar variedad general</option>
     `;
 
-    nuevasVariedades.forEach((variedad) => {
+    json.data.forEach((variedad) => {
       const option = document.createElement("option");
       option.value = variedad;
       option.textContent = variedad;
@@ -980,10 +888,24 @@ async function cargarViajes() {
   const contenedor = document.getElementById("viajes-botones");
   if (!contenedor) return;
 
-  const pintarBotones = (viajes) => {
+  try {
+    const res = await fetch("/api/viajes");
+
+    if (!res.ok) {
+      contenedor.innerHTML = "";
+      return;
+    }
+
+    const json = await res.json();
+
+    if (!json.ok || !Array.isArray(json.data)) {
+      contenedor.innerHTML = "";
+      return;
+    }
+
     contenedor.innerHTML = "";
 
-    viajes.forEach((nombre) => {
+    json.data.forEach((nombre) => {
       const btn = document.createElement("button");
 
       btn.className = "btn-viaje";
@@ -995,27 +917,8 @@ async function cargarViajes() {
 
       contenedor.appendChild(btn);
     });
-  };
-
-  try {
-    const res = await fetch("/api/viajes");
-
-    if (!res.ok) {
-      pintarBotones(Array.from({ length: 20 }, (_, i) => `Viaje ${i + 1}`));
-      return;
-    }
-
-    const json = await res.json();
-
-    if (!json.ok || !Array.isArray(json.data)) {
-      contenedor.innerHTML = "";
-      return;
-    }
-
-    pintarBotones(json.data);
   } catch (err) {
     console.error("Error cargando viajes:", err);
-    pintarBotones(Array.from({ length: 20 }, (_, i) => `Viaje ${i + 1}`));
   }
 }
 function limpiarTotalesVariedadGlobal() {
@@ -1055,7 +958,6 @@ if (!mostrandoRegistrosHistoricos) {
 await refrescarPivot();
 await refrescarResumenDesdeBD();
 await cargarContadorGeneralBD();
-await cargarVariedadesGlobales();
 
 const bloque = bloqueGeneralSelect?.value || "";
 const variedad = variedadGeneralSelect?.value || "";
@@ -1166,8 +1068,6 @@ pintarDuplicadosYErrores();
     }
 
     await conservarPosicionPantalla(async () => {
-      await refrescarResumen();
-      await pintarPendientesOfflineDelViaje();
       await refrescarResumenDesdeBD();
       await cargarContadorGeneralBD();
     });
@@ -1176,39 +1076,6 @@ pintarDuplicadosYErrores();
     iniciarAutoRefreshViaje();
   } catch (err) {
     console.error("Error activando viaje:", err);
-
-    if (!navigator.onLine) {
-      const viajeNombre = String(nombre || "").trim();
-
-      viajeActivo = viajeNombre;
-      guardarEstadoUI();
-      detenerAutoRefreshViaje();
-      mostrandoRegistrosHistoricos = false;
-
-      document.querySelectorAll(".btn-viaje").forEach((b) => {
-        b.classList.toggle("activo", b.textContent === viajeNombre);
-      });
-
-      setText(viajeActivoLabel, viajeNombre);
-      setText(totalEscaneados, 0);
-      setText(totalDuplicados, 0);
-      setText(totalErrores, 0);
-      setText(totalAcumuladoGeneral, 0);
-      actualizarAlertasResumen(0, 0);
-
-      cacheDetalle = [];
-      duplicadosSesionActual = 0;
-      erroresSesionActual = 0;
-      cacheYaRegistrados = [];
-      pintarDuplicadosYErrores();
-
-      await pintarPendientesOfflineDelViaje();
-      await actualizarTotalesConPendientesOffline(0, 0);
-
-      setStatus(`Viaje ${viajeNombre} activado en modo offline`, "warn");
-      return;
-    }
-
     setStatus("Error activando viaje", "error");
   }
 }
@@ -1260,7 +1127,10 @@ async function finalizarViaje() {
 
 async function escanearCodigo(barcode) {
   try {
-    const barcodeLimpio = normalizarBarcode(barcode);
+    const barcodeLimpio = String(barcode || "")
+      .replace(/[^A-Za-z0-9]/g, "")
+      .toUpperCase()
+      .trim();
 
     if (!viajeActivo) {
       setStatus("Debes activar un viaje antes de escanear", "warn");
@@ -1318,7 +1188,7 @@ async function escanearCodigo(barcode) {
         return;
       }
 
-      const registroOffline = await guardarRegistroOffline(payload);
+      await guardarRegistroOffline(payload);
 
       setStatus(`${barcodeLimpio} → GUARDADO OFFLINE`, "warn");
 
@@ -1328,7 +1198,7 @@ async function escanearCodigo(barcode) {
       const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
       setAcumuladoSeguro(acumulado + 1);
 
-      agregarRegistroOfflineVisual(registroOffline);
+      agregarRegistroOfflineVisual(payload);
 
       return;
     }
@@ -1400,19 +1270,18 @@ async function escanearCodigo(barcode) {
     }
 
     setTimeout(() => {
-  conservarPosicionPantalla(async () => {
-    await refrescarResumen();
-    await refrescarPivot();
+      conservarPosicionPantalla(async () => {
+        await refrescarResumen();
+        await refrescarPivot();
 
-    if (!mostrandoRegistrosHistoricos) {
-      await refrescarDetalle();
-    }
+        if (!mostrandoRegistrosHistoricos) {
+          await refrescarDetalle();
+        }
 
-    await refrescarResumenDesdeBD();
-    await cargarContadorGeneralBD();
-    await cargarVariedadesGlobales();
-  });
-}, 250);
+        await refrescarResumenDesdeBD();
+        await cargarContadorGeneralBD();
+      });
+    }, 250);
 
   } catch (error) {
     console.error("Error escaneando:", error);
@@ -1477,7 +1346,7 @@ async function refrescarResumen() {
     const duplicados = json.sesionActual?.duplicados ?? 0;
     const errores = json.sesionActual?.errores ?? 0;
 
-    await actualizarTotalesConPendientesOffline(okSesion + reregSesion);
+    setText(totalEscaneados, okSesion + reregSesion);
     if (Number(duplicados || 0) > duplicadosSesionActual) {
   duplicadosSesionActual = Number(duplicados || 0);
 }
@@ -1510,7 +1379,7 @@ async function refrescarResumenDesdeBD() {
     const ok = Number(row.ok || 0);
     const rereg = Number(row.reregistrados || 0);
 
-    await actualizarTotalesConPendientesOffline(null, ok + rereg);
+    setAcumuladoSeguro(ok + rereg);
   } catch (err) {
     console.error("Error refrescando resumen DB:", err);
   }
@@ -1705,7 +1574,6 @@ function badgeResultado(resultado) {
   if (resultado === "YA_REGISTRADO") return `<span class="badge badge-dup">YA REGISTRADO</span>`;
   if (resultado === "NO_EXISTE") return `<span class="badge badge-bad">NO EXISTE</span>`;
   if (resultado === "REREGISTRADO") return `<span class="badge badge-ok">RE-REGISTRADO</span>`;
-  if (resultado === "OFFLINE") return `<span class="badge badge-offline">OFFLINE</span>`;
   return resultado || "";
 }
 
@@ -1762,9 +1630,7 @@ function renderDetalle(data) {
   visibles.forEach((row) => {
     const fecha = new Date(row.fecha).toLocaleString("es-CO");
 
-    let acciones = row.resultado === "OFFLINE"
-      ? `<span class="badge badge-offline">Pendiente</span>`
-      : `<button class="btn-delete" data-barcode="${row.barcode}">Eliminar</button>`;
+    let acciones = `<button class="btn-delete" data-barcode="${row.barcode}">Eliminar</button>`;
 
     if (row.resultado === "YA_REGISTRADO" && row.puede_reregistrar === true) {
       acciones += ` <button class="btn-primary btn-reregistrar-tabla" data-barcode="${row.barcode}">Re-registrar</button>`;
@@ -1779,7 +1645,7 @@ function renderDetalle(data) {
 
     tr.innerHTML = `
       <td>${fecha}</td>
-      <td>${row.viaje || viajeActivo}</td>
+      <td>${viajeActivo}</td>
       <td>${row.barcode ?? ""}</td>
       <td>${row.bloque ?? ""}</td>
       <td>${row.variedad ?? ""}</td>
@@ -2112,21 +1978,17 @@ if (barcodeInput) {
 
   try {
     const res = await fetch(`/api/viajes/${encodeURIComponent(viajeActivo)}/detalle`);
-    if (!res.ok) {
-      await pintarPendientesOfflineDelViaje();
-      return;
-    }
+    if (!res.ok) return;
 
     const json = await res.json();
 
     cacheDetalle = json.data || [];
-    await pintarPendientesOfflineDelViaje();
+
     renderDetalle(cacheDetalle);
     refrescarResumenPorVariedad();
 
   } catch (err) {
     console.error("Error refrescando detalle:", err);
-    await pintarPendientesOfflineDelViaje();
   }
 }
 
@@ -2602,9 +2464,6 @@ window.addEventListener("load", async () => {
 await cargarBloquesGenerales();
 await cargarVariedadesGlobales();
 await cargarViajes();
-setInterval(async () => {
-  await cargarVariedadesGlobales();
-}, 5000);
 
   limpiarConsultaGeneral();
 
