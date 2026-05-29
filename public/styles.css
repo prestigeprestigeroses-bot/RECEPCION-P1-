@@ -231,3 +231,166 @@ tbody tr:hover {
   color: var(--warning) !important;
   border-color: #f3cf78 !important;
 }
+
+/* Tema oscuro operativo */
+body {
+  background: linear-gradient(180deg, #02150f 0%, #06281d 45%, #0b3a2b 100%) !important;
+  color: #ecfdf5 !important;
+}
+
+.sidebar,
+.card,
+.metric-card,
+.mini-stat,
+.card-ver-registros,
+.quick-help,
+.travel-card,
+.modal-box,
+.table-wrap,
+.ya-registrado-item,
+.modal-dup-item {
+  background: #10251d !important;
+  color: #ecfdf5 !important;
+  border-color: rgba(134, 239, 172, 0.2) !important;
+}
+
+.card h2,
+.section-header h2,
+.modal-header h2,
+.field label,
+.section-title,
+.brand-title,
+.metric-value,
+.scanner-readout-value {
+  color: #f7fff9 !important;
+}
+
+.page-sub,
+.section-kicker,
+.metric-label,
+.mini-stat .label,
+.travel-sub,
+.empty-row,
+.modal-dup-meta {
+  color: #b8e7c9 !important;
+}
+
+.nav a {
+  color: #c7f9d4 !important;
+}
+
+.nav a:hover {
+  background: rgba(34, 197, 94, 0.18) !important;
+  color: #ffffff !important;
+}
+
+.nav a.active {
+  background: #1f8a4c !important;
+  color: #ffffff !important;
+}
+
+.field input,
+.field select,
+.scan-input {
+  background: #0b1f18 !important;
+  color: #f7fff9 !important;
+  border-color: rgba(134, 239, 172, 0.28) !important;
+}
+
+thead,
+th {
+  background: #153628 !important;
+}
+
+th {
+  color: #d9f99d !important;
+}
+
+td {
+  color: #f7fff9 !important;
+}
+
+tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.035) !important;
+}
+
+tbody tr:hover {
+  background: rgba(34, 197, 94, 0.12) !important;
+}
+
+.cell-green {
+  background: rgba(34, 197, 94, 0.18) !important;
+  color: #86efac !important;
+}
+
+.cell-blue {
+  background: rgba(56, 189, 248, 0.18) !important;
+  color: #bae6fd !important;
+}
+
+/* Tabla compacta de resumen: evita mover barra horizontal para ver + y - */
+#resumen .right-stack .table-wrap {
+  overflow-x: visible !important;
+}
+
+#resumen .right-stack table {
+  table-layout: fixed !important;
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+#resumen .right-stack th,
+#resumen .right-stack td {
+  white-space: normal !important;
+  padding: 10px 8px !important;
+  font-size: 0.9rem !important;
+}
+
+#resumen .right-stack th:nth-child(1),
+#resumen .right-stack td:nth-child(1) {
+  width: 12%;
+}
+
+#resumen .right-stack th:nth-child(2),
+#resumen .right-stack td:nth-child(2) {
+  width: 20%;
+}
+
+#resumen .right-stack th:nth-child(3),
+#resumen .right-stack td:nth-child(3),
+#resumen .right-stack th:nth-child(4),
+#resumen .right-stack td:nth-child(4) {
+  width: 12%;
+}
+
+#resumen .right-stack th:nth-child(5),
+#resumen .right-stack td:nth-child(5),
+#resumen .right-stack th:nth-child(6),
+#resumen .right-stack td:nth-child(6) {
+  width: 15%;
+  text-align: center;
+}
+
+#resumen .right-stack th:nth-child(7),
+#resumen .right-stack td:nth-child(7) {
+  width: 14%;
+  text-align: center;
+}
+
+#resumen .right-stack td:last-child {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+
+#resumen .right-stack .btn-add-manual,
+#resumen .right-stack .btn-remove-manual {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0 !important;
+  margin: 0 !important;
+  font-size: 1.25rem !important;
+}

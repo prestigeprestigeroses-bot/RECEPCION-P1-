@@ -254,16 +254,72 @@ function agregarRegistroOfflineVisual(payload) {
   cacheDetalle.unshift(row);
   renderDetalle(cacheDetalle);
 }
+const TIPOS_CACHE_KEY = "poscosecha_tipos_cache";
+
+function obtenerTiposCache() {
+  try {
+    return JSON.parse(localStorage.getItem(TIPOS_CACHE_KEY) || "{}");
+  } catch (err) {
+    return {};
+  }
+}
+
+function guardarTiposCache(data) {
+  const cache = {};
+
+  (data || []).forEach((row) => {
+    const tipo = String(row.tipo || "").toUpperCase().trim();
+    if (!tipo) return;
+    cache[tipo] = row;
+  });
+
+  localStorage.setItem(TIPOS_CACHE_KEY, JSON.stringify(cache));
+}
+
+async function cargarCatalogoTiposOffline() {
+  try {
+    const res = await fetch("/api/tipos-variedad");
+    if (!res.ok) return;
+
+    const json = await res.json();
+    if (!json.ok || !Array.isArray(json.data)) return;
+
+    guardarTiposCache(json.data);
+  } catch (err) {
+    console.warn("No se pudo actualizar el catalogo offline de tipos:", err);
+  }
+}
+
+function obtenerDatosOfflinePorBarcode(barcode) {
+  const codigo = normalizarBarcode(barcode);
+  const tipo = codigo.slice(0, 2);
+  const serial = codigo.slice(2);
+  const datos = obtenerTiposCache()[tipo] || {};
+
+  return {
+    tipo,
+    serial,
+    bloque: datos.bloque || "Pendiente",
+    variedad: datos.variedad || "Pendiente de sincronizar",
+    tamano: datos.tamano || "",
+    tallos: datos.tallos || "",
+  };
+}
+
 function crearFilaOfflineVisual(registro) {
+  const datos = obtenerDatosOfflinePorBarcode(registro.barcode);
+
   return {
     id_offline: registro.id,
     fecha: registro.created_at_local || new Date().toISOString(),
     viaje: registro.viaje || viajeActivo,
     barcode: registro.barcode,
-    bloque: "Pendiente",
-    variedad: "Pendiente de sincronizar",
-    tamano: "",
-    tallos: "",
+    tipo: datos.tipo,
+    serial: datos.serial,
+    bloque: datos.bloque,
+    variedad: datos.variedad,
+    tamano: datos.tamano,
+    tallos: datos.tallos,
     form: registro.form || "",
     resultado: "OFFLINE",
     observacion: "Guardado localmente. Se sincronizara cuando vuelva internet."
@@ -1590,7 +1646,7 @@ function refrescarResumenPorVariedad() {
   const agrupado = {};
 
   cacheDetalle.forEach((row) => {
-    if (!["OK", "REREGISTRADO"].includes(row.resultado)) return;
+    if (!["OK", "REREGISTRADO", "OFFLINE"].includes(row.resultado)) return;
 
     const bloque = String(row.bloque || "N/A").trim();
     const variedad = String(row.variedad || "Sin variedad").trim();
@@ -2601,6 +2657,7 @@ window.addEventListener("load", async () => {
   await cargarContadorGeneralBD();
 await cargarBloquesGenerales();
 await cargarVariedadesGlobales();
+await cargarCatalogoTiposOffline();
 await cargarViajes();
 
   limpiarConsultaGeneral();
@@ -2620,6 +2677,7 @@ window.addEventListener("online", async () => {
   setStatus("Internet recuperado. Sincronizando pendientes...", "warn");
 
   try {
+    await cargarCatalogoTiposOffline();
     await sincronizarRegistrosOffline();
   } catch (err) {
     console.error("Error sincronizando al volver internet:", err);
