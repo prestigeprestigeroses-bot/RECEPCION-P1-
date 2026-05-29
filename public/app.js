@@ -158,10 +158,7 @@ function abrirDBOffline() {
       }
     };
 
-    request.onsuccess = () => resolve({
-      ...registro,
-      id: request.result
-    });
+    request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
@@ -181,7 +178,10 @@ async function guardarRegistroOffline(payload) {
 
     const request = store.add(registro);
 
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => resolve({
+      ...registro,
+      id: request.result
+    });
     request.onerror = () => reject(request.error);
   });
 }

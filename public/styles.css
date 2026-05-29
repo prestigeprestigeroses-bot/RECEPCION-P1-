@@ -1,5 +1,5 @@
 :root {
-  --bg: #eef4fb;
+  --bg: #06281d;
   --surface: #ffffff;
   --surface-soft: #f7fafc;
   --surface-strong: #e9f3ff;
@@ -22,7 +22,7 @@
 
 body {
   background:
-    linear-gradient(180deg, rgba(23, 105, 170, 0.09), rgba(31, 138, 76, 0.06) 45%, rgba(238, 244, 251, 0) 80%),
+    linear-gradient(180deg, #031a12 0%, #06281d 42%, #0b3a2b 100%),
     var(--bg) !important;
   color: var(--ink) !important;
 }
@@ -86,9 +86,17 @@ body {
 }
 
 .topbar {
-  background: rgba(238, 244, 251, 0.93);
-  border-bottom: 1px solid rgba(191, 209, 227, 0.7);
+  background: rgba(6, 40, 29, 0.94);
+  border-bottom: 1px solid rgba(184, 231, 201, 0.22);
   backdrop-filter: blur(12px);
+}
+
+.topbar .page-title {
+  color: #f4fff8 !important;
+}
+
+.topbar .page-sub {
+  color: #b8e7c9 !important;
 }
 
 .metric-card.main {
