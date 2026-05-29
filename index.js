@@ -60,41 +60,6 @@ function parseCode(codeRaw) {
   return { barcode: code, tipo, serial };
 }
 
-app.get("/api/offline/catalogo", async (req, res) => {
-  try {
-    const q = `
-      SELECT
-        barcode,
-        tipo,
-        serial,
-        variedad,
-        bloque,
-        tamano,
-        tallos,
-        etapa,
-        form,
-        created_at
-      FROM registros
-      WHERE created_at::date = CURRENT_DATE
-      ORDER BY created_at DESC
-    `;
-
-    const r = await pool.query(q);
-
-    res.json({
-      ok: true,
-      data: r.rows
-    });
-
-  } catch (err) {
-    console.error("Error cargando catálogo offline:", err);
-    res.status(500).json({
-      ok: false,
-      error: "Error cargando catálogo offline"
-    });
-  }
-});
-
 app.get("/api/viaje-activo", async (_req, res) => {
   try {
     const r = await pool.query(`
@@ -142,23 +107,15 @@ app.post("/api/viajes/activar", async (req, res) => {
     }
 
     const viaje = asegurarViaje(nombre);
-viaje.activa = true;
+    viaje.activa = true;
 
-// Guardar viaje activo en base de datos
-await pool.query(`
-  INSERT INTO sistema_estado (clave, valor)
-  VALUES ('viaje_activo', $1)
-  ON CONFLICT (clave)
-  DO UPDATE SET valor = EXCLUDED.valor
-`, [nombre]);
-
-res.json({
-  ok: true,
-  data: {
-    nombre,
-    activa: true
-  }
-});
+    res.json({
+      ok: true,
+      data: {
+        nombre,
+        activa: true
+      }
+    });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
@@ -245,24 +202,22 @@ app.post("/api/escanear", async (req, res) => {
 
     // 2. Insertar en registros
     const insert = await pool.query(
-  `INSERT INTO registros
-   (barcode, tipo, serial, variedad, bloque, tamano, tallos, etapa, viaje, form)
-   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-   ON CONFLICT (barcode) DO NOTHING
-   RETURNING barcode`,
-  [
-    barcode,
-    tipo,
-    serial,
-    t.variedad,
-    t.bloque,
-    t.tamano,
-    t.tallos,
-    "Ingreso",
-    viajeNombre,
-    req.body.form || ""
-  ]
-);
+      `INSERT INTO registros
+       (barcode, tipo, serial, variedad, bloque, tamano, tallos, etapa)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (barcode) DO NOTHING
+       RETURNING barcode`,
+      [
+        barcode,
+        tipo,
+        serial,
+        t.variedad,
+        t.bloque,
+        t.tamano,
+        t.tallos,
+        "Ingreso"
+      ]
+    );
 
     let resultado = "OK";
     let observacion = "Escaneo registrado correctamente";
@@ -273,21 +228,19 @@ app.post("/api/escanear", async (req, res) => {
     }
 
     const evento = {
-  fecha: new Date().toISOString(),
-  barcode,
-  tipo,
-  serial,
-  bloque: t.bloque,
-  variedad: t.variedad,
-  tamano: t.tamano,
-  tallos: t.tallos,
-  etapa: "Ingreso",
-  form: req.body.form || "",
-  form_id: null,
-  viaje: viajeNombre,
-  resultado,
-  observacion
-};
+      fecha: new Date().toISOString(),
+      barcode,
+      tipo,
+      serial,
+      bloque: t.bloque,
+      variedad: t.variedad,
+      tamano: t.tamano,
+      tallos: t.tallos,
+      etapa: "Ingreso",
+      form_id: null,
+      resultado,
+      observacion
+    };
 
     viaje.historial.unshift(evento);
 
@@ -304,54 +257,6 @@ app.post("/api/escanear", async (req, res) => {
   }
 });
 
-app.get("/api/general/contador", async (_req, res) => {
-  try {
-    const r = await pool.query(`
-      SELECT
-        COUNT(*) AS total,
-        COALESCE(SUM(tallos), 0) AS total_tallos
-      FROM registros
-      WHERE created_at::date = CURRENT_DATE
-    `);
-
-    res.json({
-      ok: true,
-      total: Number(r.rows[0]?.total || 0),
-      total_tallos: Number(r.rows[0]?.total_tallos || 0)
-    });
-
-  } catch (err) {
-    console.error("Error /api/general/contador:", err);
-    res.status(500).json({
-      ok: false,
-      error: err.message
-    });
-  }
-});
-app.get("/api/general/variedades", async (_req, res) => {
-  try {
-    const r = await pool.query(`
-      SELECT DISTINCT variedad
-      FROM registros
-      WHERE variedad IS NOT NULL
-        AND TRIM(variedad) <> ''
-        AND created_at::date = CURRENT_DATE
-      ORDER BY variedad
-    `);
-
-    res.json({
-      ok: true,
-      data: r.rows.map(row => row.variedad)
-    });
-
-  } catch (err) {
-    console.error("Error /api/general/variedades:", err);
-    res.status(500).json({
-      ok: false,
-      error: err.message
-    });
-  }
-});
 // =====================================================
 // RESUMEN DEL VIAJE
 // =====================================================
@@ -390,34 +295,51 @@ app.get("/api/viajes/:nombre/resumen", async (req, res) => {
 app.get("/api/viajes/:nombre/pivot", async (req, res) => {
   try {
     const nombre = decodeURIComponent(req.params.nombre);
+    const viaje = sesionesViaje[nombre];
 
-    const r = await pool.query(`
-      SELECT
-        bloque,
-        variedad,
-        COALESCE(tamano, 'NA') AS tamano,
-        tallos,
-        COALESCE(etapa, 'Ingreso') AS etapa,
-        COUNT(*) AS tabacos,
-        SUM(COALESCE(tallos, 0)) AS suma_tallos
-      FROM registros
-      WHERE viaje = $1
-        AND created_at::date = CURRENT_DATE
-      GROUP BY bloque, variedad, tamano, tallos, etapa
-      ORDER BY bloque, variedad
-    `, [nombre]);
+    if (!viaje) {
+      return res.json({ ok: true, data: [] });
+    }
 
-    res.json({
-      ok: true,
-      data: r.rows
+    const agrupado = {};
+
+    for (const row of viaje.historial) {
+      if (row.resultado !== "OK") continue;
+
+      const key = [
+        row.bloque ?? "",
+        row.variedad ?? "",
+        row.tamano ?? "",
+        row.tallos ?? "",
+        row.etapa ?? ""
+      ].join("|");
+
+      if (!agrupado[key]) {
+        agrupado[key] = {
+          bloque: row.bloque ?? "",
+          variedad: row.variedad ?? "",
+          tamano: row.tamano ?? "",
+          tallos: row.tallos ?? "",
+          etapa: row.etapa ?? "",
+          tabacos: 0,
+          suma_tallos: 0
+        };
+      }
+
+      agrupado[key].tabacos += 1;
+      agrupado[key].suma_tallos += Number(row.tallos || 0);
+    }
+
+    const data = Object.values(agrupado).sort((a, b) => {
+      if (String(a.bloque) < String(b.bloque)) return -1;
+      if (String(a.bloque) > String(b.bloque)) return 1;
+      return String(a.variedad).localeCompare(String(b.variedad));
     });
+
+    res.json({ ok: true, data });
 
   } catch (err) {
-    console.error("Error pivot:", err);
-    res.status(500).json({
-      ok: false,
-      error: err.message
-    });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
@@ -427,42 +349,19 @@ app.get("/api/viajes/:nombre/pivot", async (req, res) => {
 app.get("/api/viajes/:nombre/detalle", async (req, res) => {
   try {
     const nombre = decodeURIComponent(req.params.nombre);
+    const viaje = sesionesViaje[nombre];
 
-    const r = await pool.query(`
-      SELECT
-        created_at AS fecha,
-        viaje,
-        barcode,
-        tipo,
-        serial,
-        bloque,
-        variedad,
-        tamano,
-        tallos,
-        etapa,
-        form,
-        barcode_origen,
-        es_reregistro,
-        'OK' AS resultado,
-        'Registro cargado desde base de datos' AS observacion
-      FROM registros
-      WHERE viaje = $1
-        AND created_at::date = CURRENT_DATE
-      ORDER BY created_at DESC
-      LIMIT 100
-    `, [nombre]);
+    if (!viaje) {
+      return res.json({ ok: true, data: [] });
+    }
 
     res.json({
       ok: true,
-      data: r.rows
+      data: viaje.historial
     });
 
   } catch (err) {
-    console.error("Error detalle:", err);
-    res.status(500).json({
-      ok: false,
-      error: err.message
-    });
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
