@@ -349,6 +349,7 @@ function agregarRegistroOfflineVisual(registro) {
   }
 
   renderDetalle(cacheDetalle);
+  refrescarResumenPorVariedad();
 }
 
 async function pintarPendientesOfflineDelViaje() {
