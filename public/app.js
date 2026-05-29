@@ -395,6 +395,40 @@ async function actualizarTotalesConPendientesOffline(baseTotalActual = null, bas
   }
 }
 
+function contarRegistrosValidosDelViaje(data = []) {
+  return data.filter((row) => {
+    return ["OK", "REREGISTRADO", "OFFLINE"].includes(row.resultado);
+  }).length;
+}
+
+async function recalcularTotalesViajeDesdeDetalle() {
+  if (!viajeActivo) return;
+
+  try {
+    const res = await fetch(`/api/viajes/${encodeURIComponent(viajeActivo)}/detalle`);
+    const json = res.ok ? await res.json() : { data: [] };
+    const detalleBD = Array.isArray(json.data) ? json.data : [];
+    const pendientes = await obtenerRegistrosOfflinePendientesPorViaje(viajeActivo);
+    const detalleOffline = pendientes.map(crearFilaOfflineVisual);
+
+    cacheDetalle = [
+      ...detalleOffline,
+      ...detalleBD
+    ];
+
+    const totalReal = contarRegistrosValidosDelViaje(cacheDetalle);
+    setText(totalEscaneados, totalReal);
+    setAcumuladoSeguro(totalReal);
+
+    if (!mostrandoRegistrosHistoricos) {
+      renderDetalle(cacheDetalle);
+      refrescarResumenPorVariedad();
+    }
+  } catch (err) {
+    console.error("Error recalculando totales reales del viaje:", err);
+  }
+}
+
 async function sincronizarRegistrosOffline() {
   const pendientes = await obtenerRegistrosOfflinePendientes();
 
@@ -452,6 +486,7 @@ async function sincronizarRegistrosOffline() {
       await pintarPendientesOfflineDelViaje();
 
       await refrescarResumenDesdeBD();
+      await recalcularTotalesViajeDesdeDetalle();
       await cargarContadorGeneralBD();
     });
   }
@@ -2311,6 +2346,10 @@ async function eliminarRegistroReal(barcode) {
 
     if (!json.ok) {
       setStatus(json.error || "No se pudo eliminar de la base de datos", "error");
+      await conservarPosicionPantalla(async () => {
+        await recalcularTotalesViajeDesdeDetalle();
+        await cargarContadorGeneralBD();
+      });
       return;
     }
 
@@ -2318,6 +2357,7 @@ async function eliminarRegistroReal(barcode) {
 
     await conservarPosicionPantalla(async () => {
       await refrescarTodo();
+      await recalcularTotalesViajeDesdeDetalle();
 
       const bloque = bloqueGeneralSelect?.value || "";
       const variedad = variedadGeneralSelect?.value || "";
@@ -2338,6 +2378,7 @@ async function refrescarTodo() {
   await refrescarPivot();
   await refrescarDetalle();
   await refrescarResumenDesdeBD();
+  await recalcularTotalesViajeDesdeDetalle();
   await cargarContadorGeneralBD();
 
   const bloqueSeleccionado = bloqueGeneralSelect?.value || "";
