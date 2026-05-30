@@ -174,6 +174,34 @@ function quitarRegistroVisualPorBarcode(barcode) {
   }
 }
 
+function quitarRegistroVisualPorGrupo(data) {
+  const index = cacheDetalle.findIndex((row) => {
+    if (!["OK", "REREGISTRADO", "OFFLINE"].includes(row.resultado)) return false;
+
+    return String(row.bloque || "") === String(data.bloque || "") &&
+      String(row.variedad || "") === String(data.variedad || "") &&
+      String(row.tamano || "") === String(data.tamano || "") &&
+      Number(row.tallos || 0) === Number(data.tallos || 0) &&
+      String(row.form || "") === String(data.form || "") &&
+      String(row.etapa || "Ingreso") === String(data.etapa || "Ingreso") &&
+      String(row.tipo || "") === String(data.tipo || "");
+  });
+
+  if (index >= 0) {
+    const eliminado = cacheDetalle.splice(index, 1)[0];
+
+    if (!mostrandoRegistrosHistoricos) {
+      renderDetalle(cacheDetalle);
+      refrescarResumenPorVariedad();
+    }
+
+    return eliminado;
+  }
+
+  refrescarResumenPorVariedad();
+  return null;
+}
+
 function normalizarBarcode(valor) {
   return String(valor || "")
     .replace(/[^A-Za-z0-9]/g, "")
@@ -1997,6 +2025,17 @@ async function quitarRegistroManualDesdeResumen(data) {
     return;
   }
 
+  const actualAntes = Number(totalEscaneados?.textContent || 0);
+  const acumuladoAntes = Number(totalAcumuladoGeneral?.textContent || 0);
+  const eliminadoVisual = quitarRegistroVisualPorGrupo(data);
+
+  setText(totalEscaneados, Math.max(0, actualAntes - 1));
+  setAcumuladoSeguro(Math.max(0, acumuladoAntes - 1));
+  setStatus(
+    `Quitando: ${data.variedad} / ${data.tamano || "NA"} / ${data.tallos} tallos`,
+    "warn"
+  );
+
   try {
     const res = await fetch("/api/registros/manual/quitar", {
       method: "POST",
@@ -2018,17 +2057,17 @@ async function quitarRegistroManualDesdeResumen(data) {
     const json = await res.json();
 
     if (!res.ok || !json.ok) {
+      if (eliminadoVisual) {
+        cacheDetalle.unshift(eliminadoVisual);
+        renderDetalle(cacheDetalle);
+        refrescarResumenPorVariedad();
+      }
+
+      setText(totalEscaneados, actualAntes);
+      setAcumuladoSeguro(acumuladoAntes);
       setStatus(json.error || "No se pudo quitar el registro", "error");
       return;
     }
-
-    // Actualiza contador principal de inmediato
-    const actual = Number(totalEscaneados?.textContent || 0);
-    setText(totalEscaneados, Math.max(0, actual - 1));
-
-    // Actualiza acumulado de inmediato
-    const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
-    setAcumuladoSeguro(Math.max(0, acumulado - 1));
 
     setStatus(
       `Se quitó un tabaco: ${data.variedad} / ${data.tamano || "NA"} / ${data.tallos} tallos`,
@@ -2038,6 +2077,14 @@ async function quitarRegistroManualDesdeResumen(data) {
     programarRefrescoPostEscaneo();
 
   } catch (err) {
+    if (eliminadoVisual) {
+      cacheDetalle.unshift(eliminadoVisual);
+      renderDetalle(cacheDetalle);
+      refrescarResumenPorVariedad();
+    }
+
+    setText(totalEscaneados, actualAntes);
+    setAcumuladoSeguro(acumuladoAntes);
     console.error("Error quitando registro manual:", err);
     setStatus("Error quitando registro manual", "error");
   }
