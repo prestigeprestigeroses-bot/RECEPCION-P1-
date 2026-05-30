@@ -10,21 +10,7 @@ function bloquearScroll() {
 
 function restaurarScroll() {
   if (!scrollBloqueado) return;
-
-  const x = scrollX;
-  const y = scrollY;
-
   scrollBloqueado = false;
-
-  window.scrollTo(x, y);
-
-  requestAnimationFrame(() => {
-    window.scrollTo(x, y);
-  });
-
-  setTimeout(() => {
-    window.scrollTo(x, y);
-  }, 80);
 }
 
 /////////////////////// CLAVE ///////////////////////////////
@@ -575,7 +561,7 @@ function focusBarcodeSeguro() {
       preventScroll: true
     });
   } catch (e) {
-    barcodeInput.focus();
+    // Evita focus sin preventScroll porque puede mover la pantalla.
   }
 }
 
@@ -584,27 +570,11 @@ function focusBarcodeSinScroll() {
 }
 
 function conservarPosicionPantalla(fn) {
-  const x = window.scrollX;
-  const y = window.scrollY;
-
   bloquearScroll();
 
   return Promise.resolve(fn())
     .finally(() => {
-      window.scrollTo(x, y);
-
-      requestAnimationFrame(() => {
-        window.scrollTo(x, y);
-      });
-
-      setTimeout(() => {
-        window.scrollTo(x, y);
-      }, 50);
-
-      setTimeout(() => {
-        window.scrollTo(x, y);
-        restaurarScroll();
-      }, 150);
+      restaurarScroll();
     });
 }
 
@@ -1201,9 +1171,6 @@ function iniciarAutoRefreshViaje() {
   autoRefreshTimer = setInterval(async () => {
     if (!viajeActivo || scrollBloqueado || escaneando) return;
 
-    const x = window.scrollX;
-    const y = window.scrollY;
-
     await refrescarResumen();
 
 if (!mostrandoRegistrosHistoricos) {
@@ -1221,12 +1188,6 @@ if (bloque) {
   await cargarResumenGeneralPorBloque(bloque, variedad);
   await cargarDetalleGeneralPorBloque(bloque, variedad);
 }
-
-    window.scrollTo(x, y);
-
-    requestAnimationFrame(() => {
-      window.scrollTo(x, y);
-    });
   }, 3000);
 }
 
@@ -2176,17 +2137,11 @@ async function procesarColaCodigos() {
   } finally {
     lectorProcesando = false;
     escaneando = false;
-
-    setTimeout(() => {
-      focusBarcodeSeguro();
-    }, 100);
   }
 }
 
 document.addEventListener("keydown", async (e) => {
   if (e.ctrlKey || e.altKey || e.metaKey) return;
-
-  if (usuarioEstaEditandoCampo()) return;
 
   const caracter = obtenerCaracterDesdeTecla(e);
 
@@ -2662,7 +2617,7 @@ function puedeRecuperarFoco() {
 
 
 // CLICK GENERAL
-document.addEventListener("click", (e) => {
+if (false) document.addEventListener("click", (e) => {
 
   const target = e.target;
 
@@ -2698,7 +2653,7 @@ document.addEventListener("click", (e) => {
 });
 
 // AL VOLVER A LA PESTAÑA
-document.addEventListener("visibilitychange", () => {
+if (false) document.addEventListener("visibilitychange", () => {
 
   if (!document.hidden) {
 
@@ -2760,21 +2715,6 @@ window.addEventListener("load", async () => {
   if (!pedirAcceso()) return;
 
   actualizarEstadoInternet();
-
-  setTimeout(() => {
-    focusBarcodeSeguro();
-  }, 300);
-
-  setInterval(() => {
-
-    if (escaneando) return;
-    if (!puedeRecuperarFoco()) return;
-
-    if (document.activeElement !== barcodeInput) {
-      focusBarcodeSeguro();
-    }
-
-  }, 1500);
 
   await cargarContadorGeneralBD();
 await cargarBloquesGenerales();
