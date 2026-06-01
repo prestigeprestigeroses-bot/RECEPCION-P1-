@@ -2184,6 +2184,10 @@ async function procesarColaCodigos() {
   } finally {
     lectorProcesando = false;
     escaneando = false;
+
+    setTimeout(() => {
+      focusBarcodeSeguro();
+    }, 80);
   }
 }
 
@@ -2762,6 +2766,19 @@ window.addEventListener("load", async () => {
   if (!pedirAcceso()) return;
 
   actualizarEstadoInternet();
+
+  setTimeout(() => {
+    focusBarcodeSeguro();
+  }, 300);
+
+  setInterval(() => {
+    if (escaneando) return;
+    if (!puedeRecuperarFoco()) return;
+
+    if (document.activeElement !== barcodeInput) {
+      focusBarcodeSeguro();
+    }
+  }, 2000);
 
   await cargarContadorGeneralBD();
 await cargarBloquesGenerales();
