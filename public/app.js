@@ -44,6 +44,7 @@ let ultimoAcumulado = null;
 let mostrandoRegistrosHistoricos = false;
 let timerOcultarRegistrosHistoricos = null;
 let timerRefrescoPostEscaneo = null;
+let timerRefrescoConsultaGeneral = null;
 
 let duplicadosSesionActual = 0;
 let erroresSesionActual = 0;
@@ -131,8 +132,55 @@ function programarRefrescoPostEscaneo() {
       await refrescarResumenDesdeBD();
       await refrescarPivot();
       await cargarContadorGeneralBD();
+      programarRefrescoConsultaGeneral();
     });
   }, 900);
+}
+
+function programarRefrescoConsultaGeneral(delay = 700) {
+  if (timerRefrescoConsultaGeneral) {
+    clearTimeout(timerRefrescoConsultaGeneral);
+  }
+
+  timerRefrescoConsultaGeneral = setTimeout(async () => {
+    timerRefrescoConsultaGeneral = null;
+    await refrescarConsultaGeneralActual();
+  }, delay);
+}
+
+async function refrescarConsultaGeneralActual() {
+  const bloqueSeleccionado = bloqueGeneralSelect?.value || "";
+  const variedadSeleccionada = variedadGeneralSelect?.value || "";
+  const variedadGlobalSeleccionada = variedadGlobalSelect?.value || "";
+
+  await cargarContadorGeneralBD();
+  await cargarBloquesGenerales();
+  await cargarVariedadesGlobales();
+
+  if (variedadGlobalSeleccionada) {
+    if (variedadGlobalSelect) {
+      variedadGlobalSelect.value = variedadGlobalSeleccionada;
+    }
+
+    await cargarResumenGeneralPorVariedadGlobal(variedadGlobalSeleccionada);
+    await cargarDetalleGeneralPorVariedadGlobal(variedadGlobalSeleccionada);
+    return;
+  }
+
+  if (bloqueSeleccionado) {
+    if (bloqueGeneralSelect) {
+      bloqueGeneralSelect.value = bloqueSeleccionado;
+    }
+
+    await cargarVariedadesGeneralesPorBloque(bloqueSeleccionado, variedadSeleccionada);
+
+    if (variedadGeneralSelect) {
+      variedadGeneralSelect.value = variedadSeleccionada;
+    }
+
+    await cargarResumenGeneralPorBloque(bloqueSeleccionado, variedadSeleccionada);
+    await cargarDetalleGeneralPorBloque(bloqueSeleccionado, variedadSeleccionada);
+  }
 }
 
 function agregarRegistroProcesadoVisual(data, resultado) {
@@ -558,6 +606,7 @@ async function sincronizarRegistrosOffline() {
       await refrescarResumenDesdeBD();
       await recalcularTotalesViajeDesdeDetalle();
       await cargarContadorGeneralBD();
+      programarRefrescoConsultaGeneral(200);
     });
   }
 
