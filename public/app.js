@@ -1763,6 +1763,11 @@ async function refrescarPivot() {
 function refrescarResumenPorVariedad() {
   if (!resumenVariedadBody) return;
 
+  const ordenActual = new Map(
+    Array.from(resumenVariedadBody.querySelectorAll("tr[data-resumen-key]"))
+      .map((tr, index) => [tr.dataset.resumenKey, index])
+  );
+
   if (!viajeActivo || !cacheDetalle.length) {
     resumenVariedadBody.innerHTML = `
       <tr>
@@ -1786,9 +1791,11 @@ function refrescarResumenPorVariedad() {
     const tipo = String(row.tipo || "").trim();
 
     const key = `${bloque}|${variedad}|${tamano}|${tallos}|${form}|${etapa}|${tipo}`;
+    const resumenKey = encodeURIComponent(key);
 
     if (!agrupado[key]) {
       agrupado[key] = {
+        resumenKey,
         bloque,
         variedad,
         tamano,
@@ -1806,9 +1813,23 @@ function refrescarResumenPorVariedad() {
   });
 
   const filas = Object.values(agrupado).sort((a, b) => {
+    const ordenA = ordenActual.get(a.resumenKey);
+    const ordenB = ordenActual.get(b.resumenKey);
+
+    if (ordenA !== undefined && ordenB !== undefined) {
+      return ordenA - ordenB;
+    }
+
+    if (ordenA !== undefined) return -1;
+    if (ordenB !== undefined) return 1;
+
     if (String(a.bloque) < String(b.bloque)) return -1;
     if (String(a.bloque) > String(b.bloque)) return 1;
-    return String(a.variedad).localeCompare(String(b.variedad));
+    const variedadCompare = String(a.variedad).localeCompare(String(b.variedad));
+    if (variedadCompare !== 0) return variedadCompare;
+    const tamanoCompare = String(a.tamano).localeCompare(String(b.tamano));
+    if (tamanoCompare !== 0) return tamanoCompare;
+    return Number(a.tallos || 0) - Number(b.tallos || 0);
   });
 
   if (!filas.length) {
@@ -1821,7 +1842,7 @@ function refrescarResumenPorVariedad() {
   }
 
   resumenVariedadBody.innerHTML = filas.map((item) => `
-    <tr>
+    <tr data-resumen-key="${item.resumenKey}">
       <td>${item.bloque}</td>
       <td>${item.variedad}</td>
       <td>${item.tamano || "NA"}</td>
