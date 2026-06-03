@@ -760,7 +760,7 @@ app.get("/api/general/bloque/:bloque/detalle", async (req, res) => {
 
     query += `
       ORDER BY created_at DESC
-      LIMIT 500
+      LIMIT 150
     `;
 
     const r = await pool.query(query, params);
@@ -977,7 +977,7 @@ app.get("/api/viajes/:nombre/detalle", async (req, res) => {
       WHERE viaje = $1
         AND created_at >= $2::timestamp
       ORDER BY created_at DESC
-      LIMIT 1000
+      LIMIT 200
     `, [nombre, inicio]);
 
     const data = r.rows.map(row => ({
@@ -1558,7 +1558,7 @@ app.get("/api/general/variedad/:variedad/detalle", async (req, res) => {
       WHERE variedad = $1
         AND created_at::date = CURRENT_DATE
       ORDER BY created_at DESC
-      LIMIT 300
+      LIMIT 150
     `, [variedad]);
 
     res.json({
@@ -1599,7 +1599,7 @@ app.get("/api/viajes/:nombre/detalle-hoy", async (req, res) => {
         AND (created_at AT TIME ZONE 'America/Bogota')::date =
             (NOW() AT TIME ZONE 'America/Bogota')::date
       ORDER BY created_at DESC
-      LIMIT 1000
+      LIMIT 500
     `, [nombre]);
 
     return res.json({

@@ -97,10 +97,38 @@ const detalleFiltroBox = document.getElementById("detalleFiltroBox");
 const btnToggleUltimosRegistros = document.getElementById("btnToggleUltimosRegistros");
 const ultimosRegistrosBox = document.getElementById("ultimosRegistrosBox");
 
+function detalleFiltroEstaAbierto() {
+  return !!detalleFiltroBox?.classList.contains("open");
+}
+
+function ultimosRegistrosEstaVisible() {
+  return !ultimosRegistrosBox || !ultimosRegistrosBox.classList.contains("collapsed-panel");
+}
+
+async function cargarDetalleFiltroActual() {
+  if (!detalleFiltroEstaAbierto()) return;
+
+  const variedadGlobalSeleccionada = variedadGlobalSelect?.value || "";
+  if (variedadGlobalSeleccionada) {
+    await cargarDetalleGeneralPorVariedadGlobal(variedadGlobalSeleccionada);
+    return;
+  }
+
+  const bloque = bloqueGeneralSelect?.value || "";
+  const variedad = variedadGeneralSelect?.value || "";
+  if (bloque) {
+    await cargarDetalleGeneralPorBloque(bloque, variedad);
+  }
+}
+
 if (btnToggleDetalleFiltro && detalleFiltroBox) {
-  btnToggleDetalleFiltro.addEventListener("click", () => {
+  btnToggleDetalleFiltro.addEventListener("click", async () => {
     const isOpen = detalleFiltroBox.classList.toggle("open");
     btnToggleDetalleFiltro.textContent = isOpen ? "Ocultar detalle" : "Mostrar detalle";
+
+    if (isOpen) {
+      await cargarDetalleFiltroActual();
+    }
   });
 }
 
@@ -153,9 +181,11 @@ async function refrescarConsultaGeneralActual() {
   const variedadSeleccionada = variedadGeneralSelect?.value || "";
   const variedadGlobalSeleccionada = variedadGlobalSelect?.value || "";
 
-  await cargarContadorGeneralBD();
-  await cargarBloquesGenerales();
-  await cargarVariedadesGlobales();
+  await Promise.all([
+    cargarContadorGeneralBD(),
+    cargarBloquesGenerales(),
+    cargarVariedadesGlobales()
+  ]);
 
   if (variedadGlobalSeleccionada) {
     if (variedadGlobalSelect) {
@@ -163,7 +193,9 @@ async function refrescarConsultaGeneralActual() {
     }
 
     await cargarResumenGeneralPorVariedadGlobal(variedadGlobalSeleccionada);
-    await cargarDetalleGeneralPorVariedadGlobal(variedadGlobalSeleccionada);
+    if (detalleFiltroEstaAbierto()) {
+      await cargarDetalleGeneralPorVariedadGlobal(variedadGlobalSeleccionada);
+    }
     return;
   }
 
@@ -179,7 +211,9 @@ async function refrescarConsultaGeneralActual() {
     }
 
     await cargarResumenGeneralPorBloque(bloqueSeleccionado, variedadSeleccionada);
-    await cargarDetalleGeneralPorBloque(bloqueSeleccionado, variedadSeleccionada);
+    if (detalleFiltroEstaAbierto()) {
+      await cargarDetalleGeneralPorBloque(bloqueSeleccionado, variedadSeleccionada);
+    }
   }
 }
 
@@ -933,6 +967,7 @@ async function cargarResumenGeneralPorBloque(bloque, variedad = "") {
 
 async function cargarDetalleGeneralPorBloque(bloque, variedad = "") {
   if (!generalBloqueDetalleBody) return;
+  if (!detalleFiltroEstaAbierto()) return;
 
   if (!bloque) {
     setHTML(generalBloqueDetalleBody, `
@@ -1097,6 +1132,7 @@ async function cargarResumenGeneralPorVariedadGlobal(variedad) {
 
 async function cargarDetalleGeneralPorVariedadGlobal(variedad) {
   if (!generalBloqueDetalleBody) return;
+  if (!detalleFiltroEstaAbierto()) return;
 
   if (!variedad) {
     setHTML(generalBloqueDetalleBody, `
@@ -1248,24 +1284,30 @@ function iniciarAutoRefreshViaje() {
   autoRefreshTimer = setInterval(async () => {
     if (!viajeActivo || scrollBloqueado || escaneando) return;
 
-    await refrescarResumen();
+    const tareas = [
+      refrescarResumen(),
+      refrescarPivot(),
+      refrescarResumenDesdeBD(),
+      cargarContadorGeneralBD()
+    ];
 
-if (!mostrandoRegistrosHistoricos) {
-  await refrescarDetalle();
-}
+    if (!mostrandoRegistrosHistoricos && ultimosRegistrosEstaVisible()) {
+      tareas.push(refrescarDetalle());
+    }
 
-await refrescarPivot();
-await refrescarResumenDesdeBD();
-await cargarContadorGeneralBD();
+    const bloque = bloqueGeneralSelect?.value || "";
+    const variedad = variedadGeneralSelect?.value || "";
 
-const bloque = bloqueGeneralSelect?.value || "";
-const variedad = variedadGeneralSelect?.value || "";
+    if (bloque) {
+      tareas.push(cargarResumenGeneralPorBloque(bloque, variedad));
 
-if (bloque) {
-  await cargarResumenGeneralPorBloque(bloque, variedad);
-  await cargarDetalleGeneralPorBloque(bloque, variedad);
-}
-  }, 3000);
+      if (detalleFiltroEstaAbierto()) {
+        tareas.push(cargarDetalleGeneralPorBloque(bloque, variedad));
+      }
+    }
+
+    await Promise.all(tareas);
+  }, 6000);
 }
 
 function detenerAutoRefreshViaje() {
@@ -2372,6 +2414,12 @@ if (barcodeInput) {
       `;
     }
 
+    return;
+  }
+
+  if (!mostrandoRegistrosHistoricos && !ultimosRegistrosEstaVisible()) {
+    await pintarPendientesOfflineDelViaje();
+    refrescarResumenPorVariedad();
     return;
   }
 
