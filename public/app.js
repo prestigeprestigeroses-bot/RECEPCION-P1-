@@ -45,6 +45,7 @@ let mostrandoRegistrosHistoricos = false;
 let timerOcultarRegistrosHistoricos = null;
 let timerRefrescoPostEscaneo = null;
 let timerRefrescoConsultaGeneral = null;
+let resumenGeneralOperando = false;
 
 let duplicadosSesionActual = 0;
 let erroresSesionActual = 0;
@@ -91,6 +92,8 @@ const variedadGeneralSelect = document.getElementById("variedad-general-select")
 const variedadGlobalSelect = document.getElementById("variedad-global-select");
 const generalBloqueBody = document.getElementById("general-bloque-body");
 const generalBloqueDetalleBody = document.getElementById("general-bloque-detalle-body");
+const totalTabacosFiltro = document.getElementById("total-tabacos-filtro");
+const totalTallosFiltro = document.getElementById("total-tallos-filtro");
 
 const btnToggleDetalleFiltro = document.getElementById("btnToggleDetalleFiltro");
 const detalleFiltroBox = document.getElementById("detalleFiltroBox");
@@ -860,6 +863,7 @@ function limpiarConsultaGeneral() {
       <td colspan="8" class="empty-row">Selecciona un bloque o variedad para consultar.</td>
     </tr>
   `);
+  limpiarTotalesResumenGeneral();
 
   setHTML(generalBloqueDetalleBody, `
     <tr>
@@ -984,6 +988,7 @@ async function cargarVariedadesGeneralesPorBloque(bloque, variedadSeleccionada =
 
 function renderResumenGeneralFiltro(rows) {
   if (!generalBloqueBody) return;
+  if (resumenGeneralOperando) return;
 
   generalBloqueBody.innerHTML = "";
 
@@ -1026,6 +1031,7 @@ function renderResumenGeneralFiltro(rows) {
   });
 
   conectarBotonesResumenGeneral();
+  actualizarTotalesResumenGeneral();
 }
 
 function ajustarFilaResumenGeneral(btn, delta) {
@@ -1043,6 +1049,33 @@ function ajustarFilaResumenGeneral(btn, delta) {
   if (sumaCell) {
     sumaCell.textContent = Math.max(0, Number(sumaCell.textContent || 0) + (delta * tallos));
   }
+
+  actualizarTotalesResumenGeneral();
+}
+
+function actualizarTotalesResumenGeneral() {
+  if (!generalBloqueBody) return;
+
+  let totalTabacos = 0;
+  let totalTallos = 0;
+
+  generalBloqueBody.querySelectorAll("tr").forEach((tr) => {
+    const tabacosCell = tr.querySelector("[data-general-tabacos]");
+    const sumaCell = tr.querySelector("[data-general-suma]");
+
+    if (!tabacosCell || !sumaCell) return;
+
+    totalTabacos += Number(tabacosCell.textContent || 0);
+    totalTallos += Number(sumaCell.textContent || 0);
+  });
+
+  setText(totalTabacosFiltro, totalTabacos);
+  setText(totalTallosFiltro, totalTallos);
+}
+
+function limpiarTotalesResumenGeneral() {
+  setText(totalTabacosFiltro, 0);
+  setText(totalTallosFiltro, 0);
 }
 
 function datosResumenGeneralDesdeBoton(btn) {
@@ -1063,6 +1096,8 @@ function conectarBotonesResumenGeneral() {
 
   generalBloqueBody.querySelectorAll(".btn-add-general").forEach((btn) => {
     btn.addEventListener("click", async () => {
+      if (resumenGeneralOperando) return;
+      resumenGeneralOperando = true;
       ajustarFilaResumenGeneral(btn, 1);
       btn.disabled = true;
 
@@ -1073,12 +1108,15 @@ function conectarBotonesResumenGeneral() {
       }
 
       btn.disabled = false;
-      programarRefrescoConsultaGeneral(150);
+      resumenGeneralOperando = false;
+      await refrescarConsultaGeneralActual();
     });
   });
 
   generalBloqueBody.querySelectorAll(".btn-remove-general").forEach((btn) => {
     btn.addEventListener("click", async () => {
+      if (resumenGeneralOperando) return;
+      resumenGeneralOperando = true;
       ajustarFilaResumenGeneral(btn, -1);
       btn.disabled = true;
 
@@ -1089,7 +1127,8 @@ function conectarBotonesResumenGeneral() {
       }
 
       btn.disabled = false;
-      programarRefrescoConsultaGeneral(150);
+      resumenGeneralOperando = false;
+      await refrescarConsultaGeneralActual();
     });
   });
 }
@@ -1098,6 +1137,7 @@ function conectarBotonesResumenGeneral() {
 
 async function cargarResumenGeneralPorBloque(bloque, variedad = "") {
   if (!generalBloqueBody) return;
+  if (resumenGeneralOperando) return;
 
   if (!bloque) {
     limpiarConsultaGeneral();
@@ -1112,6 +1152,7 @@ async function cargarResumenGeneralPorBloque(bloque, variedad = "") {
     const res = await fetch(url);
 
     if (!res.ok) {
+      limpiarTotalesResumenGeneral();
       setHTML(generalBloqueBody, `
         <tr>
           <td colspan="8" class="empty-row">Error cargando el resumen del bloque.</td>
@@ -1123,6 +1164,7 @@ async function cargarResumenGeneralPorBloque(bloque, variedad = "") {
     const json = await res.json();
 
     if (!json.ok || !json.data.length) {
+      limpiarTotalesResumenGeneral();
       setHTML(generalBloqueBody, `
         <tr>
           <td colspan="8" class="empty-row">No hay datos para este filtro.</td>
@@ -1133,6 +1175,7 @@ async function cargarResumenGeneralPorBloque(bloque, variedad = "") {
 
     renderResumenGeneralFiltro(json.data);
   } catch (err) {
+    limpiarTotalesResumenGeneral();
     setHTML(generalBloqueBody, `
       <tr>
         <td colspan="8" class="empty-row">Error cargando el resumen del bloque.</td>
@@ -1229,6 +1272,7 @@ async function cargarDetalleGeneralPorBloque(bloque, variedad = "") {
 }
 async function cargarResumenGeneralPorVariedadGlobal(variedad) {
   if (!generalBloqueBody) return;
+  if (resumenGeneralOperando) return;
 
   if (!variedad) {
     limpiarTotalesVariedadGlobal();
@@ -1243,6 +1287,7 @@ async function cargarResumenGeneralPorVariedadGlobal(variedad) {
 
     if (!res.ok) {
       limpiarTotalesVariedadGlobal();
+      limpiarTotalesResumenGeneral();
 
       setHTML(generalBloqueBody, `
         <tr>
@@ -1256,6 +1301,7 @@ async function cargarResumenGeneralPorVariedadGlobal(variedad) {
 
     if (!json.ok || !Array.isArray(json.data) || !json.data.length) {
       limpiarTotalesVariedadGlobal();
+      limpiarTotalesResumenGeneral();
 
       setHTML(generalBloqueBody, `
         <tr>
@@ -1281,6 +1327,7 @@ async function cargarResumenGeneralPorVariedadGlobal(variedad) {
     console.error("Error cargando resumen por variedad global:", err);
 
     limpiarTotalesVariedadGlobal();
+    limpiarTotalesResumenGeneral();
 
     setHTML(generalBloqueBody, `
       <tr>
@@ -2435,8 +2482,6 @@ async function agregarRegistroManualDesdeResumen(data) {
       quitarRegistroVisualPorBarcode(barcodeTemporal);
       agregarRegistroProcesadoVisual(json.data, "OK");
       programarRefrescoPostEscaneo();
-    } else {
-      programarRefrescoConsultaGeneral(150);
     }
 
     return true;
@@ -2512,7 +2557,9 @@ async function quitarRegistroManualDesdeResumen(data) {
       "ok"
     );
 
-    programarRefrescoPostEscaneo();
+    if (!esConsultaGeneral) {
+      programarRefrescoPostEscaneo();
+    }
     return true;
 
   } catch (err) {

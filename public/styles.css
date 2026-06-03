@@ -171,6 +171,33 @@ button,
   border-radius: var(--radius) !important;
 }
 
+.filter-total-bar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: 10px;
+  margin: 10px 0 12px;
+}
+
+.filter-total-bar > div {
+  background: #123d2b;
+  border: 1px solid rgba(184, 231, 201, 0.24);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+.filter-total-bar span {
+  display: block;
+  color: #d7fbe1;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+
+.filter-total-bar strong {
+  color: #ffffff;
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
 thead,
 th {
   background: var(--surface-strong) !important;
