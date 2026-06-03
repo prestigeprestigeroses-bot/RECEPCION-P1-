@@ -258,7 +258,7 @@ app.post("/api/escanear", async (req, res) => {
 });
 
 // =====================================================
-// RESUMEN DEL VIAJE
+// RESUMEN DEL VIAJEeeeeeee
 // =====================================================
 app.get("/api/viajes/:nombre/resumen", async (req, res) => {
   try {
