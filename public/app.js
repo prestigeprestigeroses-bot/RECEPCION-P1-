@@ -2362,30 +2362,33 @@ function renderDetalle(data) {
 }
 
 async function agregarRegistroManualDesdeResumen(data) {
-  if (!viajeActivo) {
+  if (!viajeActivo && data.scope !== "general") {
     setStatus("Debes activar un viaje antes de agregar registros", "warn");
     return false;
   }
 
+  const esConsultaGeneral = data.scope === "general";
   const barcodeTemporal = `MANUAL-${Date.now()}`;
   const actualAntes = Number(totalEscaneados?.textContent || 0);
   const acumuladoAntes = Number(totalAcumuladoGeneral?.textContent || 0);
 
-  setText(totalEscaneados, actualAntes + 1);
-  setAcumuladoSeguro(acumuladoAntes + 1);
+  if (!esConsultaGeneral) {
+    setText(totalEscaneados, actualAntes + 1);
+    setAcumuladoSeguro(acumuladoAntes + 1);
 
-  agregarRegistroProcesadoVisual({
-    barcode: barcodeTemporal,
-    tipo: data.tipo || "",
-    serial: "",
-    bloque: data.bloque,
-    variedad: data.variedad,
-    tamano: data.tamano,
-    tallos: data.tallos,
-    form: data.form,
-    etapa: data.etapa || "Ingreso",
-    observacion: "Agregando manualmente..."
-  }, "OK");
+    agregarRegistroProcesadoVisual({
+      barcode: barcodeTemporal,
+      tipo: data.tipo || "",
+      serial: "",
+      bloque: data.bloque,
+      variedad: data.variedad,
+      tamano: data.tamano,
+      tallos: data.tallos,
+      form: data.form,
+      etapa: data.etapa || "Ingreso",
+      observacion: "Agregando manualmente..."
+    }, "OK");
+  }
 
   setStatus(
     `Agregando: ${data.variedad} / ${data.tamano || "NA"} / ${data.tallos} tallos`,
@@ -2399,7 +2402,7 @@ async function agregarRegistroManualDesdeResumen(data) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        viaje: viajeActivo,
+        viaje: esConsultaGeneral ? "" : viajeActivo,
         bloque: data.bloque,
         variedad: data.variedad,
         tamano: data.tamano,
@@ -2414,9 +2417,11 @@ async function agregarRegistroManualDesdeResumen(data) {
     const json = await res.json();
 
     if (!res.ok || !json.ok) {
-      quitarRegistroVisualPorBarcode(barcodeTemporal);
-      setText(totalEscaneados, actualAntes);
-      setAcumuladoSeguro(acumuladoAntes);
+      if (!esConsultaGeneral) {
+        quitarRegistroVisualPorBarcode(barcodeTemporal);
+        setText(totalEscaneados, actualAntes);
+        setAcumuladoSeguro(acumuladoAntes);
+      }
       setStatus(json.error || "No se pudo agregar el registro manual", "error");
       return false;
     }
@@ -2426,14 +2431,21 @@ async function agregarRegistroManualDesdeResumen(data) {
       "ok"
     );
 
-    quitarRegistroVisualPorBarcode(barcodeTemporal);
-    agregarRegistroProcesadoVisual(json.data, "OK");
-    programarRefrescoPostEscaneo();
+    if (!esConsultaGeneral) {
+      quitarRegistroVisualPorBarcode(barcodeTemporal);
+      agregarRegistroProcesadoVisual(json.data, "OK");
+      programarRefrescoPostEscaneo();
+    } else {
+      programarRefrescoConsultaGeneral(150);
+    }
+
     return true;
   } catch (err) {
-    quitarRegistroVisualPorBarcode(barcodeTemporal);
-    setText(totalEscaneados, actualAntes);
-    setAcumuladoSeguro(acumuladoAntes);
+    if (!esConsultaGeneral) {
+      quitarRegistroVisualPorBarcode(barcodeTemporal);
+      setText(totalEscaneados, actualAntes);
+      setAcumuladoSeguro(acumuladoAntes);
+    }
     console.error("Error agregando registro manual:", err);
     setStatus("Error agregando registro manual", "error");
     return false;
@@ -2473,7 +2485,8 @@ async function quitarRegistroManualDesdeResumen(data) {
         tallos: data.tallos,
         form: data.form,
         etapa: data.etapa || "Ingreso",
-        tipo: data.tipo
+        tipo: data.tipo,
+        scope: data.scope || "viaje"
       })
     });
 

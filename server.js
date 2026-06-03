@@ -424,9 +424,9 @@ app.post("/api/reregistrar", async (req, res) => {
       return res.status(400).json({ ok: false, error: "No hay viaje activo" });
     }
 
-    const viaje = asegurarViaje(viajeNombre);
+    const viaje = esGeneral ? null : asegurarViaje(viajeNombre);
 
-    if (!viaje.activa) {
+    if (!esGeneral && !viaje.activa) {
       return res.status(400).json({ ok: false, error: "El viaje está finalizado" });
     }
 
@@ -1256,10 +1256,12 @@ app.post("/api/registros/manual", async (req, res) => {
     const tamanoRaw = String(req.body.tamano || "").trim();
     const form = String(req.body.form || "").trim();
     const etapa = String(req.body.etapa || "Ingreso").trim();
+    const scope = String(req.body.scope || "viaje").trim();
     let tipo = String(req.body.tipo || "").trim();
     const tallos = Number(req.body.tallos || 0);
+    const esGeneral = scope === "general";
 
-    if (!viajeNombre) {
+    if (!viajeNombre && !esGeneral) {
       return res.status(400).json({ ok: false, error: "Falta viaje" });
     }
 
@@ -1267,16 +1269,27 @@ app.post("/api/registros/manual", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Faltan datos del registro manual" });
     }
 
-    const viaje = asegurarViaje(viajeNombre);
+    const viaje = esGeneral ? null : asegurarViaje(viajeNombre);
 
-    if (!viaje.activa) {
+    if (!esGeneral && !viaje.activa) {
       return res.status(400).json({ ok: false, error: "El viaje está finalizado" });
     }
 
     const tamano = tamanoRaw || null;
 
     if (!tipo) {
-      const tipoLookup = await pool.query(`
+      const tipoLookup = esGeneral
+        ? await pool.query(`
+        SELECT tipo
+        FROM public.registros
+        WHERE COALESCE(TRIM(variedad), '') = COALESCE(TRIM($1), '')
+          AND COALESCE(TRIM(CAST(bloque AS text)), '') = COALESCE(TRIM($2), '')
+          AND COALESCE(TRIM(tamano), '') = COALESCE(TRIM($3), '')
+          AND COALESCE(tallos, 0) = $4
+        ORDER BY created_at DESC
+        LIMIT 1
+      `, [variedad, bloque, tamano || "", tallos])
+        : await pool.query(`
         SELECT tipo
         FROM public.registros
         WHERE viaje = $1
@@ -1313,7 +1326,7 @@ app.post("/api/registros/manual", async (req, res) => {
       tamano,
       tallos,
       etapa,
-      viajeNombre,
+      esGeneral ? null : viajeNombre,
       null,
       false,
       form
@@ -1339,9 +1352,11 @@ app.post("/api/registros/manual", async (req, res) => {
       barcode_origen: null
     };
 
-    viaje.historial.unshift(evento);
-    viaje.historialSesion.unshift(evento);
-    viaje.acumulado.ok += 1;
+    if (!esGeneral && viaje) {
+      viaje.historial.unshift(evento);
+      viaje.historialSesion.unshift(evento);
+      viaje.acumulado.ok += 1;
+    }
 
     return res.json({
       ok: true,
