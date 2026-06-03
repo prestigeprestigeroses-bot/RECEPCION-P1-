@@ -46,6 +46,7 @@ let timerOcultarRegistrosHistoricos = null;
 let timerRefrescoPostEscaneo = null;
 let timerRefrescoConsultaGeneral = null;
 let resumenGeneralOperando = false;
+let sincronizandoOffline = false;
 
 let duplicadosSesionActual = 0;
 let erroresSesionActual = 0;
@@ -565,8 +566,8 @@ function crearFilaOfflineVisual(registro) {
     tamano: datos.tamano,
     tallos: datos.tallos,
     form: registro.form || "",
-    resultado: "OFFLINE",
-    observacion: "Guardado localmente. Se sincronizara cuando vuelva internet."
+    resultado: "LOCAL",
+    observacion: "Guardado localmente. Enviando a la base de datos."
   };
 }
 
@@ -576,7 +577,7 @@ function agregarRegistroOfflineVisual(registro) {
     if (row.id_offline && item.id_offline === row.id_offline) return true;
 
     return normalizarBarcode(item.barcode) === normalizarBarcode(row.barcode) &&
-      item.resultado === "OFFLINE";
+      ["OFFLINE", "LOCAL"].includes(item.resultado);
   });
 
   if (!yaExiste) {
@@ -598,10 +599,10 @@ async function pintarPendientesOfflineDelViaje() {
   const barcodesOffline = new Set(filasOffline.map((row) => normalizarBarcode(row.barcode)));
   const detalleServidor = cacheDetalle
     .filter((row) => {
-      if (row.resultado !== "OFFLINE") return true;
+      if (!["OFFLINE", "LOCAL"].includes(row.resultado)) return true;
       return barcodesOffline.has(normalizarBarcode(row.barcode));
     })
-    .filter((row) => row.resultado !== "OFFLINE");
+    .filter((row) => !["OFFLINE", "LOCAL"].includes(row.resultado));
 
   cacheDetalle = [
     ...filasOffline,
@@ -632,7 +633,7 @@ async function actualizarTotalesConPendientesOffline(baseTotalActual = null, bas
 
 function contarRegistrosValidosDelViaje(data = []) {
   return data.filter((row) => {
-    return ["OK", "REREGISTRADO", "OFFLINE"].includes(row.resultado);
+    return ["OK", "REREGISTRADO", "OFFLINE", "LOCAL"].includes(row.resultado);
   }).length;
 }
 
@@ -665,12 +666,15 @@ async function recalcularTotalesViajeDesdeDetalle() {
 }
 
 async function sincronizarRegistrosOffline() {
+  if (sincronizandoOffline) return;
+
   const pendientes = await obtenerRegistrosOfflinePendientes();
 
   if (!pendientes.length) {
     return;
   }
 
+  sincronizandoOffline = true;
   setStatus(`Sincronizando ${pendientes.length} registros pendientes...`, "warn");
 
   let sincronizados = 0;
@@ -678,7 +682,7 @@ async function sincronizarRegistrosOffline() {
 
   for (const item of pendientes) {
     try {
-      const res = await fetch("/api/escanear", {
+      const res = await fetchConTimeout("/api/escanear", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -688,7 +692,7 @@ async function sincronizarRegistrosOffline() {
           viaje: item.viaje,
           form: item.form || ""
         })
-      });
+      }, 12000);
 
       const json = await res.json();
 
@@ -706,6 +710,8 @@ async function sincronizarRegistrosOffline() {
       break;
     }
   }
+
+  sincronizandoOffline = false;
 
   if (sincronizados > 0) {
     setStatus(`Sincronizados ${sincronizados} registros pendientes`, "ok");
@@ -731,6 +737,13 @@ async function sincronizarRegistrosOffline() {
     await pintarPendientesOfflineDelViaje();
     await actualizarTotalesConPendientesOffline();
     setStatus(`Quedan registros pendientes por sincronizar`, "warn");
+  }
+
+  const quedanPendientes = await obtenerRegistrosOfflinePendientes();
+  if (quedanPendientes.length && navigator.onLine) {
+    setTimeout(() => {
+      sincronizarRegistrosOffline();
+    }, 500);
   }
 }
 function setAcumuladoSeguro(valor) {
@@ -2169,7 +2182,7 @@ function refrescarResumenPorVariedad() {
   const agrupado = {};
 
   cacheDetalle.forEach((row) => {
-    if (!["OK", "REREGISTRADO", "OFFLINE"].includes(row.resultado)) return;
+    if (!["OK", "REREGISTRADO", "OFFLINE", "LOCAL"].includes(row.resultado)) return;
 
     const bloque = String(row.bloque || "N/A").trim();
     const variedad = String(row.variedad || "Sin variedad").trim();
@@ -2300,6 +2313,7 @@ function badgeResultado(resultado) {
   if (resultado === "NO_EXISTE") return `<span class="badge badge-bad">NO EXISTE</span>`;
   if (resultado === "REREGISTRADO") return `<span class="badge badge-ok">RE-REGISTRADO</span>`;
   if (resultado === "OFFLINE") return `<span class="badge badge-offline">OFFLINE</span>`;
+  if (resultado === "LOCAL") return `<span class="badge badge-ok">GUARDADO</span>`;
   if (resultado === "PROCESANDO") return `<span class="badge badge-offline">PROCESANDO</span>`;
   return resultado || "";
 }
@@ -2357,8 +2371,8 @@ function renderDetalle(data) {
   visibles.forEach((row) => {
     const fecha = new Date(row.fecha).toLocaleString("es-CO");
 
-    let acciones = row.resultado === "OFFLINE"
-      ? `<span class="badge badge-offline">Pendiente</span>`
+    let acciones = ["OFFLINE", "LOCAL"].includes(row.resultado)
+      ? `<span class="badge badge-offline">Enviando</span>`
       : `<button class="btn-delete" data-barcode="${row.barcode}">Eliminar</button>`;
 
     if (row.resultado === "PROCESANDO") {
@@ -2639,6 +2653,50 @@ function obtenerCaracterDesdeTecla(e) {
   return null;
 }
 
+async function registrarEscaneoInstantaneo(codigo) {
+  const barcodeLimpio = normalizarBarcode(codigo);
+
+  if (!viajeActivo) {
+    setStatus("Debes activar un viaje antes de escanear", "warn");
+    return;
+  }
+
+  if (!barcodeLimpio) return;
+
+  try {
+    const yaExisteOffline = await existeRegistroOfflinePendiente(barcodeLimpio);
+
+    if (yaExisteOffline) {
+      setStatus(`${barcodeLimpio} ya esta guardado localmente`, "warn");
+      return;
+    }
+
+    const payload = {
+      barcode: barcodeLimpio,
+      viaje: viajeActivo,
+      form: formInput?.value?.trim() || ""
+    };
+
+    const registroLocal = await guardarRegistroOffline(payload);
+
+    const actual = Number(totalEscaneados?.textContent || 0);
+    setText(totalEscaneados, actual + 1);
+
+    const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
+    setAcumuladoSeguro(acumulado + 1);
+
+    agregarRegistroOfflineVisual(registroLocal);
+    setStatus(`${barcodeLimpio} guardado. Enviando a la base...`, "ok");
+
+    setTimeout(() => {
+      sincronizarRegistrosOffline();
+    }, 20);
+  } catch (err) {
+    console.error("Error guardando escaneo local:", err);
+    setStatus("No se pudo guardar el escaneo localmente", "error");
+  }
+}
+
 function encolarCodigo(codigoRaw) {
   const codigo = String(codigoRaw || "")
     .replace(/[^A-Za-z0-9]/g, "")
@@ -2663,13 +2721,7 @@ function encolarCodigo(codigoRaw) {
     return;
   }
 
-  colaCodigos.push({
-    codigo,
-    viaje: viajeActivo
-  });
-
-  agregarRegistroPendienteVisual(codigo, viajeActivo);
-  procesarColaCodigos();
+  registrarEscaneoInstantaneo(codigo);
 }
 function procesarColaCodigos() {
   while (colaCodigos.length > 0 && escaneosActivos < MAX_ESCANEOS_PARALELOS) {
