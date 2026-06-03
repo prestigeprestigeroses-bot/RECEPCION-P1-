@@ -148,6 +148,24 @@ function setHTML(el, value) {
   if (el) el.innerHTML = value;
 }
 
+async function fetchConTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function esErrorTimeout(error) {
+  return error?.name === "AbortError";
+}
+
 function programarRefrescoPostEscaneo() {
   if (timerRefrescoPostEscaneo) {
     clearTimeout(timerRefrescoPostEscaneo);
@@ -289,6 +307,21 @@ function quitarRegistroPendienteVisual(barcode) {
   });
 
   if (antes !== cacheDetalle.length && !mostrandoRegistrosHistoricos) {
+    renderDetalle(cacheDetalle);
+  }
+}
+
+function actualizarRegistroPendienteVisual(barcode, observacion) {
+  const codigo = normalizarBarcode(barcode);
+  const row = cacheDetalle.find((item) => {
+    return item.resultado === "PROCESANDO" && normalizarBarcode(item.barcode) === codigo;
+  });
+
+  if (!row) return;
+
+  row.observacion = observacion;
+
+  if (!mostrandoRegistrosHistoricos) {
     renderDetalle(cacheDetalle);
   }
 }
@@ -1020,7 +1053,8 @@ function datosResumenGeneralDesdeBoton(btn) {
     tallos: Number(btn.dataset.tallos || 0),
     etapa: btn.dataset.etapa || "Ingreso",
     form: "",
-    tipo: ""
+    tipo: "",
+    scope: "general"
   };
 }
 
@@ -1646,17 +1680,27 @@ async function escanearCodigo(barcode, viajeRegistro = viajeActivo) {
     let data = null;
 
     try {
-      res = await fetch("/api/escanear", {
+      res = await fetchConTimeout("/api/escanear", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         body: JSON.stringify(payload)
-      });
+      }, 8000);
 
       data = await res.json();
 
     } catch (networkError) {
+      if (navigator.onLine && esErrorTimeout(networkError)) {
+        actualizarRegistroPendienteVisual(
+          barcodeLimpio,
+          "Servidor lento. Reintentando registro automatico..."
+        );
+        setStatus(`${barcodeLimpio} pendiente por respuesta lenta. Reintentando...`, "warn");
+        programarEscaneoForzado(payload);
+        return;
+      }
+
       const yaExisteOffline = await existeRegistroOfflinePendiente(barcodeLimpio);
 
       if (yaExisteOffline) {
@@ -1795,6 +1839,110 @@ async function escanearCodigo(barcode, viajeRegistro = viajeActivo) {
     console.error("Error escaneando:", error);
     quitarRegistroPendienteVisual(barcode);
     setStatus("Error escaneando", "error");
+  }
+}
+
+function programarEscaneoForzado(payload, intento = 1) {
+  const delay = Math.min(1500 * intento, 6000);
+
+  setTimeout(() => {
+    confirmarEscaneoPendiente(payload, intento);
+  }, delay);
+}
+
+async function confirmarEscaneoPendiente(payload, intento = 1) {
+  const barcodeLimpio = normalizarBarcode(payload?.barcode);
+  const viajeRegistro = String(payload?.viaje || "").trim();
+  const mostrarEnPantallaActual = viajeRegistro === viajeActivo;
+
+  if (!barcodeLimpio || !viajeRegistro) return;
+
+  if (!navigator.onLine) {
+    try {
+      const registroOffline = await guardarRegistroOffline(payload);
+      quitarRegistroPendienteVisual(barcodeLimpio);
+
+      if (mostrarEnPantallaActual) {
+        agregarRegistroOfflineVisual(registroOffline);
+      }
+    } catch (err) {
+      actualizarRegistroPendienteVisual(barcodeLimpio, "Sin internet. Pendiente de guardado local.");
+    }
+
+    return;
+  }
+
+  actualizarRegistroPendienteVisual(
+    barcodeLimpio,
+    `Reintentando registro automatico (${intento}/5)...`
+  );
+
+  try {
+    const res = await fetchConTimeout("/api/escanear", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    }, 12000);
+
+    const data = await res.json();
+
+    if (!res.ok || !data || data.ok === false) {
+      throw new Error(data?.error || data?.mensaje || "No se pudo confirmar el registro");
+    }
+
+    if (data.resultado === "OK" || data.resultado === "REREGISTRADO") {
+      if (mostrarEnPantallaActual) {
+        const actual = Number(totalEscaneados?.textContent || 0);
+        setText(totalEscaneados, actual + 1);
+
+        const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
+        setAcumuladoSeguro(acumulado + 1);
+
+        agregarRegistroProcesadoVisual(data.data, data.resultado);
+      } else {
+        quitarRegistroPendienteVisual(barcodeLimpio);
+      }
+
+      setStatus(`${barcodeLimpio} registrado automaticamente`, "ok");
+      programarRefrescoPostEscaneo();
+      return;
+    }
+
+    if (data.resultado === "YA_REGISTRADO") {
+      quitarRegistroPendienteVisual(barcodeLimpio);
+
+      if (mostrarEnPantallaActual) {
+        await recalcularTotalesViajeDesdeDetalle();
+      }
+
+      setStatus(`${barcodeLimpio} ya estaba confirmado en la base`, "ok");
+      programarRefrescoPostEscaneo();
+      return;
+    }
+
+    if (data.resultado === "NO_EXISTE") {
+      quitarRegistroPendienteVisual(barcodeLimpio);
+      erroresSesionActual += 1;
+      pintarDuplicadosYErrores();
+      setStatus(`${barcodeLimpio} no existe`, "error");
+      return;
+    }
+
+    quitarRegistroPendienteVisual(barcodeLimpio);
+    setStatus(`${barcodeLimpio} procesado`, "ok");
+  } catch (err) {
+    if (intento < 5) {
+      programarEscaneoForzado(payload, intento + 1);
+      return;
+    }
+
+    actualizarRegistroPendienteVisual(
+      barcodeLimpio,
+      "No se pudo confirmar aun. Revisa conexion con el servidor."
+    );
+    setStatus(`${barcodeLimpio} sigue pendiente por respuesta del servidor`, "warn");
   }
 }
 
@@ -2258,7 +2406,8 @@ async function agregarRegistroManualDesdeResumen(data) {
         tallos: data.tallos,
         form: data.form,
         etapa: data.etapa || "Ingreso",
-        tipo: data.tipo
+        tipo: data.tipo,
+        scope: data.scope || "viaje"
       })
     });
 
@@ -2291,17 +2440,20 @@ async function agregarRegistroManualDesdeResumen(data) {
   }
 }
 async function quitarRegistroManualDesdeResumen(data) {
-  if (!viajeActivo) {
+  if (!viajeActivo && data.scope !== "general") {
     setStatus("Debes activar un viaje antes de quitar registros", "warn");
     return false;
   }
 
+  const esConsultaGeneral = data.scope === "general";
   const actualAntes = Number(totalEscaneados?.textContent || 0);
   const acumuladoAntes = Number(totalAcumuladoGeneral?.textContent || 0);
-  const eliminadoVisual = quitarRegistroVisualPorGrupo(data);
+  const eliminadoVisual = esConsultaGeneral ? null : quitarRegistroVisualPorGrupo(data);
 
-  setText(totalEscaneados, Math.max(0, actualAntes - 1));
-  setAcumuladoSeguro(Math.max(0, acumuladoAntes - 1));
+  if (!esConsultaGeneral) {
+    setText(totalEscaneados, Math.max(0, actualAntes - 1));
+    setAcumuladoSeguro(Math.max(0, acumuladoAntes - 1));
+  }
   setStatus(
     `Quitando: ${data.variedad} / ${data.tamano || "NA"} / ${data.tallos} tallos`,
     "warn"
@@ -2314,7 +2466,7 @@ async function quitarRegistroManualDesdeResumen(data) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        viaje: viajeActivo,
+        viaje: viajeActivo || "",
         bloque: data.bloque,
         variedad: data.variedad,
         tamano: data.tamano,
@@ -2334,8 +2486,10 @@ async function quitarRegistroManualDesdeResumen(data) {
         refrescarResumenPorVariedad();
       }
 
-      setText(totalEscaneados, actualAntes);
-      setAcumuladoSeguro(acumuladoAntes);
+      if (!esConsultaGeneral) {
+        setText(totalEscaneados, actualAntes);
+        setAcumuladoSeguro(acumuladoAntes);
+      }
       setStatus(json.error || "No se pudo quitar el registro", "error");
       return false;
     }
@@ -2355,8 +2509,10 @@ async function quitarRegistroManualDesdeResumen(data) {
       refrescarResumenPorVariedad();
     }
 
-    setText(totalEscaneados, actualAntes);
-    setAcumuladoSeguro(acumuladoAntes);
+    if (!esConsultaGeneral) {
+      setText(totalEscaneados, actualAntes);
+      setAcumuladoSeguro(acumuladoAntes);
+    }
     console.error("Error quitando registro manual:", err);
     setStatus("Error quitando registro manual", "error");
     return false;

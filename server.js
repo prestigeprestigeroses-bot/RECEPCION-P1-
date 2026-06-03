@@ -1410,20 +1410,50 @@ app.post("/api/registros/manual/quitar", async (req, res) => {
     const tallos = Number(req.body.tallos || 0);
     const form = String(req.body.form || "").trim();
     const etapa = String(req.body.etapa || "Ingreso").trim();
+    const scope = String(req.body.scope || "viaje").trim();
 
     const tamanoNormalizado =
       !tamanoRaw || tamanoRaw.toUpperCase() === "NA"
         ? ""
         : tamanoRaw;
 
-    if (!viaje || !bloque || !variedad || !tallos) {
+    if ((!viaje && scope !== "general") || !bloque || !variedad || !tallos) {
       return res.status(400).json({
         ok: false,
         error: "Datos incompletos para quitar registro"
       });
     }
 
-    const r = await pool.query(`
+    const r = scope === "general"
+      ? await pool.query(`
+      WITH registro_a_borrar AS (
+        SELECT barcode
+        FROM registros
+        WHERE bloque::text = $1
+          AND LOWER(TRIM(variedad)) = LOWER(TRIM($2))
+          AND COALESCE(NULLIF(TRIM(tamano), 'NA'), '') = COALESCE(NULLIF(TRIM($3), 'NA'), '')
+          AND tallos = $4
+          AND ($5 = '' OR COALESCE(TRIM(form), '') = COALESCE(TRIM($5), ''))
+          AND COALESCE(TRIM(etapa), '') = COALESCE(TRIM($6), '')
+          AND (created_at AT TIME ZONE 'America/Bogota')::date =
+              (NOW() AT TIME ZONE 'America/Bogota')::date
+        ORDER BY created_at DESC
+        LIMIT 1
+      )
+      DELETE FROM registros
+      WHERE barcode IN (
+        SELECT barcode FROM registro_a_borrar
+      )
+      RETURNING barcode;
+    `, [
+        bloque,
+        variedad,
+        tamanoNormalizado,
+        tallos,
+        form,
+        etapa
+      ])
+      : await pool.query(`
       WITH registro_a_borrar AS (
         SELECT barcode
         FROM registros
