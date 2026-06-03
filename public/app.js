@@ -592,7 +592,7 @@ async function pintarPendientesOfflineDelViaje() {
   if (!viajeActivo) return [];
 
   const pendientes = await obtenerRegistrosOfflinePendientesPorViaje(viajeActivo);
-  const filasOffline = pendientes
+  let filasOffline = pendientes
     .sort((a, b) => new Date(b.created_at_local || 0) - new Date(a.created_at_local || 0))
     .map(crearFilaOfflineVisual);
 
@@ -603,6 +603,11 @@ async function pintarPendientesOfflineDelViaje() {
       return barcodesOffline.has(normalizarBarcode(row.barcode));
     })
     .filter((row) => !["OFFLINE", "LOCAL"].includes(row.resultado));
+  const barcodesServidor = new Set(detalleServidor.map((row) => normalizarBarcode(row.barcode)));
+
+  filasOffline = filasOffline.filter((row) => {
+    return !barcodesServidor.has(normalizarBarcode(row.barcode));
+  });
 
   cacheDetalle = [
     ...filasOffline,
@@ -623,11 +628,23 @@ async function actualizarTotalesConPendientesOffline(baseTotalActual = null, bas
   const pendientes = await contarRegistrosOfflinePendientes(viajeActivo);
 
   if (baseTotalActual !== null) {
-    setText(totalEscaneados, Number(baseTotalActual || 0) + pendientes);
+    const base = Number(baseTotalActual || 0);
+    const actualPantalla = Number(totalEscaneados?.textContent || 0);
+    const total = sincronizandoOffline
+      ? Math.max(base, actualPantalla)
+      : base + pendientes;
+
+    setText(totalEscaneados, total);
   }
 
   if (baseAcumuladoActual !== null) {
-    setAcumuladoSeguro(Number(baseAcumuladoActual || 0) + pendientes);
+    const base = Number(baseAcumuladoActual || 0);
+    const actualPantalla = Number(totalAcumuladoGeneral?.textContent || 0);
+    const total = sincronizandoOffline
+      ? Math.max(base, actualPantalla)
+      : base + pendientes;
+
+    setAcumuladoSeguro(total);
   }
 }
 
@@ -645,7 +662,10 @@ async function recalcularTotalesViajeDesdeDetalle() {
     const json = res.ok ? await res.json() : { data: [] };
     const detalleBD = Array.isArray(json.data) ? json.data : [];
     const pendientes = await obtenerRegistrosOfflinePendientesPorViaje(viajeActivo);
-    const detalleOffline = pendientes.map(crearFilaOfflineVisual);
+    const barcodesBD = new Set(detalleBD.map((row) => normalizarBarcode(row.barcode)));
+    const detalleOffline = pendientes
+      .map(crearFilaOfflineVisual)
+      .filter((row) => !barcodesBD.has(normalizarBarcode(row.barcode)));
 
     cacheDetalle = [
       ...detalleOffline,
