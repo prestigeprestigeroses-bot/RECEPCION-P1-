@@ -135,6 +135,8 @@ button,
 .toggleBtn,
 .btn-add-manual,
 .btn-remove-manual,
+.btn-add-general,
+.btn-remove-general,
 .btn-delete,
 .btn-delete-general {
   border-radius: var(--radius) !important;
@@ -148,6 +150,7 @@ button,
 }
 
 .btn-add-manual,
+.btn-add-general,
 .btn-viaje.activo {
   background: var(--success) !important;
   color: #ffffff !important;
@@ -156,7 +159,8 @@ button,
 .btn-finalizar,
 .btn-delete,
 .btn-delete-general,
-.btn-remove-manual {
+.btn-remove-manual,
+.btn-remove-general {
   background: var(--danger) !important;
   color: #ffffff !important;
 }

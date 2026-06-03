@@ -824,7 +824,7 @@ function limpiarConsultaGeneral() {
 
   setHTML(generalBloqueBody, `
     <tr>
-      <td colspan="7" class="empty-row">Selecciona un bloque o variedad para consultar.</td>
+      <td colspan="8" class="empty-row">Selecciona un bloque o variedad para consultar.</td>
     </tr>
   `);
 
@@ -949,6 +949,117 @@ async function cargarVariedadesGeneralesPorBloque(bloque, variedadSeleccionada =
   }
 }
 
+function renderResumenGeneralFiltro(rows) {
+  if (!generalBloqueBody) return;
+
+  generalBloqueBody.innerHTML = "";
+
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    const tallos = Number(row.tallos || 0);
+
+    tr.innerHTML = `
+      <td>${row.bloque ?? ""}</td>
+      <td>${row.variedad ?? ""}</td>
+      <td>${row.tamano ?? ""}</td>
+      <td>${row.tallos ?? ""}</td>
+      <td>${row.etapa ?? ""}</td>
+      <td class="cell-green" data-general-tabacos>${row.tabacos ?? 0}</td>
+      <td class="cell-blue" data-general-suma>${row.suma_tallos ?? 0}</td>
+      <td>
+        <button
+          class="btn-add-general"
+          data-bloque="${row.bloque ?? ""}"
+          data-variedad="${row.variedad ?? ""}"
+          data-tamano="${row.tamano ?? ""}"
+          data-tallos="${tallos}"
+          data-etapa="${row.etapa || "Ingreso"}"
+          title="Agregar un registro igual"
+        >+</button>
+
+        <button
+          class="btn-remove-general"
+          data-bloque="${row.bloque ?? ""}"
+          data-variedad="${row.variedad ?? ""}"
+          data-tamano="${row.tamano ?? ""}"
+          data-tallos="${tallos}"
+          data-etapa="${row.etapa || "Ingreso"}"
+          title="Quitar un registro igual"
+        >-</button>
+      </td>
+    `;
+
+    generalBloqueBody.appendChild(tr);
+  });
+
+  conectarBotonesResumenGeneral();
+}
+
+function ajustarFilaResumenGeneral(btn, delta) {
+  const tr = btn.closest("tr");
+  if (!tr) return;
+
+  const tabacosCell = tr.querySelector("[data-general-tabacos]");
+  const sumaCell = tr.querySelector("[data-general-suma]");
+  const tallos = Number(btn.dataset.tallos || 0);
+
+  if (tabacosCell) {
+    tabacosCell.textContent = Math.max(0, Number(tabacosCell.textContent || 0) + delta);
+  }
+
+  if (sumaCell) {
+    sumaCell.textContent = Math.max(0, Number(sumaCell.textContent || 0) + (delta * tallos));
+  }
+}
+
+function datosResumenGeneralDesdeBoton(btn) {
+  return {
+    bloque: btn.dataset.bloque,
+    variedad: btn.dataset.variedad,
+    tamano: btn.dataset.tamano,
+    tallos: Number(btn.dataset.tallos || 0),
+    etapa: btn.dataset.etapa || "Ingreso",
+    form: "",
+    tipo: ""
+  };
+}
+
+function conectarBotonesResumenGeneral() {
+  if (!generalBloqueBody) return;
+
+  generalBloqueBody.querySelectorAll(".btn-add-general").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      ajustarFilaResumenGeneral(btn, 1);
+      btn.disabled = true;
+
+      const ok = await agregarRegistroManualDesdeResumen(datosResumenGeneralDesdeBoton(btn));
+
+      if (!ok) {
+        ajustarFilaResumenGeneral(btn, -1);
+      }
+
+      btn.disabled = false;
+      programarRefrescoConsultaGeneral(150);
+    });
+  });
+
+  generalBloqueBody.querySelectorAll(".btn-remove-general").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      ajustarFilaResumenGeneral(btn, -1);
+      btn.disabled = true;
+
+      const ok = await quitarRegistroManualDesdeResumen(datosResumenGeneralDesdeBoton(btn));
+
+      if (!ok) {
+        ajustarFilaResumenGeneral(btn, 1);
+      }
+
+      btn.disabled = false;
+      programarRefrescoConsultaGeneral(150);
+    });
+  });
+}
+
 
 
 async function cargarResumenGeneralPorBloque(bloque, variedad = "") {
@@ -969,7 +1080,7 @@ async function cargarResumenGeneralPorBloque(bloque, variedad = "") {
     if (!res.ok) {
       setHTML(generalBloqueBody, `
         <tr>
-          <td colspan="7" class="empty-row">Error cargando el resumen del bloque.</td>
+          <td colspan="8" class="empty-row">Error cargando el resumen del bloque.</td>
         </tr>
       `);
       return;
@@ -980,33 +1091,17 @@ async function cargarResumenGeneralPorBloque(bloque, variedad = "") {
     if (!json.ok || !json.data.length) {
       setHTML(generalBloqueBody, `
         <tr>
-          <td colspan="7" class="empty-row">No hay datos para este filtro.</td>
+          <td colspan="8" class="empty-row">No hay datos para este filtro.</td>
         </tr>
       `);
       return;
     }
 
-    generalBloqueBody.innerHTML = "";
-
-    json.data.forEach((row) => {
-      const tr = document.createElement("tr");
-
-      tr.innerHTML = `
-        <td>${row.bloque ?? ""}</td>
-        <td>${row.variedad ?? ""}</td>
-        <td>${row.tamano ?? ""}</td>
-        <td>${row.tallos ?? ""}</td>
-        <td>${row.etapa ?? ""}</td>
-        <td class="cell-green">${row.tabacos ?? 0}</td>
-        <td class="cell-blue">${row.suma_tallos ?? 0}</td>
-      `;
-
-      generalBloqueBody.appendChild(tr);
-    });
+    renderResumenGeneralFiltro(json.data);
   } catch (err) {
     setHTML(generalBloqueBody, `
       <tr>
-        <td colspan="7" class="empty-row">Error cargando el resumen del bloque.</td>
+        <td colspan="8" class="empty-row">Error cargando el resumen del bloque.</td>
       </tr>
     `);
   }
@@ -1117,7 +1212,7 @@ async function cargarResumenGeneralPorVariedadGlobal(variedad) {
 
       setHTML(generalBloqueBody, `
         <tr>
-          <td colspan="7" class="empty-row">Error cargando el resumen de la variedad.</td>
+          <td colspan="8" class="empty-row">Error cargando el resumen de la variedad.</td>
         </tr>
       `);
       return;
@@ -1130,7 +1225,7 @@ async function cargarResumenGeneralPorVariedadGlobal(variedad) {
 
       setHTML(generalBloqueBody, `
         <tr>
-          <td colspan="7" class="empty-row">No hay datos para esta variedad.</td>
+          <td colspan="8" class="empty-row">No hay datos para esta variedad.</td>
         </tr>
       `);
       return;
@@ -1146,23 +1241,7 @@ async function cargarResumenGeneralPorVariedadGlobal(variedad) {
 
     mostrarTotalesVariedadGlobal(variedad, totalTabacos, totalTallos);
 
-    generalBloqueBody.innerHTML = "";
-
-    json.data.forEach((row) => {
-      const tr = document.createElement("tr");
-
-      tr.innerHTML = `
-        <td>${row.bloque ?? ""}</td>
-        <td>${row.variedad ?? ""}</td>
-        <td>${row.tamano ?? ""}</td>
-        <td>${row.tallos ?? ""}</td>
-        <td>${row.etapa ?? ""}</td>
-        <td class="cell-green">${row.tabacos ?? 0}</td>
-        <td class="cell-blue">${row.suma_tallos ?? 0}</td>
-      `;
-
-      generalBloqueBody.appendChild(tr);
-    });
+    renderResumenGeneralFiltro(json.data);
 
   } catch (err) {
     console.error("Error cargando resumen por variedad global:", err);
@@ -1171,7 +1250,7 @@ async function cargarResumenGeneralPorVariedadGlobal(variedad) {
 
     setHTML(generalBloqueBody, `
       <tr>
-        <td colspan="7" class="empty-row">Error cargando el resumen de la variedad.</td>
+        <td colspan="8" class="empty-row">Error cargando el resumen de la variedad.</td>
       </tr>
     `);
   }
@@ -2137,7 +2216,7 @@ function renderDetalle(data) {
 async function agregarRegistroManualDesdeResumen(data) {
   if (!viajeActivo) {
     setStatus("Debes activar un viaje antes de agregar registros", "warn");
-    return;
+    return false;
   }
 
   const barcodeTemporal = `MANUAL-${Date.now()}`;
@@ -2190,7 +2269,7 @@ async function agregarRegistroManualDesdeResumen(data) {
       setText(totalEscaneados, actualAntes);
       setAcumuladoSeguro(acumuladoAntes);
       setStatus(json.error || "No se pudo agregar el registro manual", "error");
-      return;
+      return false;
     }
 
     setStatus(
@@ -2201,18 +2280,20 @@ async function agregarRegistroManualDesdeResumen(data) {
     quitarRegistroVisualPorBarcode(barcodeTemporal);
     agregarRegistroProcesadoVisual(json.data, "OK");
     programarRefrescoPostEscaneo();
+    return true;
   } catch (err) {
     quitarRegistroVisualPorBarcode(barcodeTemporal);
     setText(totalEscaneados, actualAntes);
     setAcumuladoSeguro(acumuladoAntes);
     console.error("Error agregando registro manual:", err);
     setStatus("Error agregando registro manual", "error");
+    return false;
   }
 }
 async function quitarRegistroManualDesdeResumen(data) {
   if (!viajeActivo) {
     setStatus("Debes activar un viaje antes de quitar registros", "warn");
-    return;
+    return false;
   }
 
   const actualAntes = Number(totalEscaneados?.textContent || 0);
@@ -2256,7 +2337,7 @@ async function quitarRegistroManualDesdeResumen(data) {
       setText(totalEscaneados, actualAntes);
       setAcumuladoSeguro(acumuladoAntes);
       setStatus(json.error || "No se pudo quitar el registro", "error");
-      return;
+      return false;
     }
 
     setStatus(
@@ -2265,6 +2346,7 @@ async function quitarRegistroManualDesdeResumen(data) {
     );
 
     programarRefrescoPostEscaneo();
+    return true;
 
   } catch (err) {
     if (eliminadoVisual) {
@@ -2277,6 +2359,7 @@ async function quitarRegistroManualDesdeResumen(data) {
     setAcumuladoSeguro(acumuladoAntes);
     console.error("Error quitando registro manual:", err);
     setStatus("Error quitando registro manual", "error");
+    return false;
   }
 }
 // =====================================================

@@ -1432,7 +1432,7 @@ app.post("/api/registros/manual/quitar", async (req, res) => {
           AND LOWER(TRIM(variedad)) = LOWER(TRIM($3))
           AND COALESCE(NULLIF(TRIM(tamano), 'NA'), '') = COALESCE(NULLIF(TRIM($4), 'NA'), '')
           AND tallos = $5
-          AND COALESCE(TRIM(form), '') = COALESCE(TRIM($6), '')
+          AND ($6 = '' OR COALESCE(TRIM(form), '') = COALESCE(TRIM($6), ''))
           AND COALESCE(TRIM(etapa), '') = COALESCE(TRIM($7), '')
         ORDER BY created_at DESC
         LIMIT 1
