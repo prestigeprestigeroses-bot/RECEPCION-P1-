@@ -719,6 +719,10 @@ async function sincronizarRegistrosOffline() {
       if (res.ok && json.ok !== false) {
         await eliminarRegistroOffline(item.id);
         sincronizados += 1;
+
+        if (json.resultado === "YA_REGISTRADO") {
+          agregarYaRegistradoPanel(json.data || {}, item.barcode);
+        }
       } else {
         fallidos += 1;
         console.warn("No se pudo sincronizar:", item, json);
@@ -814,6 +818,37 @@ function pintarDuplicadosYErrores() {
   setText(totalDuplicados, duplicadosSesionActual);
   setText(totalErrores, erroresSesionActual);
   actualizarAlertasResumen(duplicadosSesionActual, erroresSesionActual);
+}
+
+function agregarYaRegistradoPanel(data = {}, fallbackBarcode = "") {
+  const barcode = data.barcode || fallbackBarcode;
+  const codigo = normalizarBarcode(barcode);
+
+  if (!codigo) return;
+
+  const yaExiste = cacheYaRegistrados.some((item) => {
+    return normalizarBarcode(item.barcode) === codigo;
+  });
+
+  if (yaExiste) return;
+
+  cacheYaRegistrados.unshift({
+    fecha: new Date().toISOString(),
+    barcode,
+    tipo: data.tipo || "",
+    serial: data.serial || "",
+    variedad: data.variedad || "",
+    bloque: data.bloque || "",
+    tamano: data.tamano || "",
+    tallos: data.tallos || "",
+    resultado: "YA_REGISTRADO",
+    observacion: data.observacion || "El barcode ya existe en registros"
+  });
+
+  cacheYaRegistrados = cacheYaRegistrados.slice(0, 50);
+  duplicadosSesionActual += 1;
+  pintarDuplicadosYErrores();
+  renderYaRegistrados();
 }
 
 function mantenerFoco() {
