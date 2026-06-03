@@ -1453,11 +1453,11 @@ async function finalizarViaje() {
   }
 }
 
-async function escanearCodigo(barcode) {
+async function escanearCodigo(barcode, viajeRegistro = viajeActivo) {
   try {
     const barcodeLimpio = normalizarBarcode(barcode);
 
-    if (!viajeActivo) {
+    if (!viajeRegistro) {
       setStatus("Debes activar un viaje antes de escanear", "warn");
       return;
     }
@@ -1469,9 +1469,10 @@ async function escanearCodigo(barcode) {
 
     const payload = {
       barcode: barcodeLimpio,
-      viaje: viajeActivo,
+      viaje: viajeRegistro,
       form: formInput?.value?.trim() || ""
     };
+    const mostrarEnPantallaActual = viajeRegistro === viajeActivo;
 
     let res = null;
     let data = null;
@@ -1491,6 +1492,11 @@ async function escanearCodigo(barcode) {
       const yaExisteOffline = await existeRegistroOfflinePendiente(barcodeLimpio);
 
       if (yaExisteOffline) {
+        if (!mostrarEnPantallaActual) {
+          setStatus(`${barcodeLimpio} procesado para ${viajeRegistro}`, "ok");
+          return;
+        }
+
         duplicadosSesionActual += 1;
 
         cacheYaRegistrados.unshift({
@@ -1517,6 +1523,10 @@ async function escanearCodigo(barcode) {
 
       setStatus(`${barcodeLimpio} → GUARDADO OFFLINE`, "warn");
 
+      if (!mostrarEnPantallaActual) {
+        return;
+      }
+
       const actual = Number(totalEscaneados?.textContent || 0);
       setText(totalEscaneados, actual + 1);
 
@@ -1542,6 +1552,11 @@ async function escanearCodigo(barcode) {
         JSON.stringify(data, null, 2)
       );
 
+      return;
+    }
+
+    if (!mostrarEnPantallaActual) {
+      setStatus(`${barcodeLimpio} procesado para ${viajeRegistro}`, "ok");
       return;
     }
 
@@ -2237,7 +2252,10 @@ function encolarCodigo(codigoRaw) {
     return;
   }
 
-  colaCodigos.push(codigo);
+  colaCodigos.push({
+    codigo,
+    viaje: viajeActivo
+  });
   procesarColaCodigos();
 }
 async function procesarColaCodigos() {
@@ -2248,8 +2266,8 @@ async function procesarColaCodigos() {
 
   try {
     while (colaCodigos.length > 0) {
-      const codigo = colaCodigos.shift();
-      await escanearCodigo(codigo);
+      const item = colaCodigos.shift();
+      await escanearCodigo(item.codigo, item.viaje);
     }
   } finally {
     lectorProcesando = false;

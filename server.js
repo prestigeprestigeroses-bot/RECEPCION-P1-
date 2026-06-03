@@ -291,15 +291,6 @@ app.post("/api/escanear", async (req, res) => {
 
     asegurarViaje(viajeNombre);
 
-    await pool.query(`
-      INSERT INTO sistema_estado (clave, valor, updated_at)
-      VALUES ('viaje_activo', $1, NOW())
-      ON CONFLICT (clave)
-      DO UPDATE SET
-        valor = EXCLUDED.valor,
-        updated_at = NOW()
-    `, [viajeNombre]);
-
     const barcode = codeInput;
     const tipo = codeInput.slice(0, 2);
     const serial = codeInput.slice(2);
