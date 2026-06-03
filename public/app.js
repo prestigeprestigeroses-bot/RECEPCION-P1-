@@ -220,6 +220,8 @@ async function refrescarConsultaGeneralActual() {
 function agregarRegistroProcesadoVisual(data, resultado) {
   if (!data || !["OK", "REREGISTRADO"].includes(resultado)) return;
 
+  quitarRegistroPendienteVisual(data.barcode);
+
   const row = {
     fecha: new Date().toISOString(),
     viaje: viajeActivo,
@@ -243,6 +245,51 @@ function agregarRegistroProcesadoVisual(data, resultado) {
   if (!mostrandoRegistrosHistoricos) {
     renderDetalle(cacheDetalle);
     refrescarResumenPorVariedad();
+  }
+}
+
+function agregarRegistroPendienteVisual(barcode, viajeRegistro) {
+  if (viajeRegistro !== viajeActivo || mostrandoRegistrosHistoricos) return;
+
+  const codigo = normalizarBarcode(barcode);
+  if (!codigo) return;
+
+  const yaExiste = cacheDetalle.some((row) => normalizarBarcode(row.barcode) === codigo);
+  if (yaExiste) return;
+
+  const datos = obtenerDatosOfflinePorBarcode(codigo);
+
+  cacheDetalle.unshift({
+    fecha: new Date().toISOString(),
+    viaje: viajeRegistro,
+    barcode: codigo,
+    tipo: datos.tipo || "",
+    serial: datos.serial || "",
+    bloque: datos.bloque || "Procesando",
+    variedad: datos.variedad || "Procesando",
+    tamano: datos.tamano || "",
+    tallos: datos.tallos || "",
+    etapa: "Ingreso",
+    form: formInput?.value?.trim() || "",
+    resultado: "PROCESANDO",
+    observacion: "Procesando registro..."
+  });
+
+  cacheDetalle = cacheDetalle.slice(0, 120);
+  renderDetalle(cacheDetalle);
+}
+
+function quitarRegistroPendienteVisual(barcode) {
+  const codigo = normalizarBarcode(barcode);
+  if (!codigo) return;
+
+  const antes = cacheDetalle.length;
+  cacheDetalle = cacheDetalle.filter((row) => {
+    return !(row.resultado === "PROCESANDO" && normalizarBarcode(row.barcode) === codigo);
+  });
+
+  if (antes !== cacheDetalle.length && !mostrandoRegistrosHistoricos) {
+    renderDetalle(cacheDetalle);
   }
 }
 
@@ -1534,6 +1581,8 @@ async function escanearCodigo(barcode, viajeRegistro = viajeActivo) {
       const yaExisteOffline = await existeRegistroOfflinePendiente(barcodeLimpio);
 
       if (yaExisteOffline) {
+        quitarRegistroPendienteVisual(barcodeLimpio);
+
         if (!mostrarEnPantallaActual) {
           setStatus(`${barcodeLimpio} procesado para ${viajeRegistro}`, "ok");
           return;
@@ -1566,6 +1615,7 @@ async function escanearCodigo(barcode, viajeRegistro = viajeActivo) {
       setStatus(`${barcodeLimpio} → GUARDADO OFFLINE`, "warn");
 
       if (!mostrarEnPantallaActual) {
+        quitarRegistroPendienteVisual(barcodeLimpio);
         return;
       }
 
@@ -1575,6 +1625,7 @@ async function escanearCodigo(barcode, viajeRegistro = viajeActivo) {
       const acumulado = Number(totalAcumuladoGeneral?.textContent || 0);
       setAcumuladoSeguro(acumulado + 1);
 
+      quitarRegistroPendienteVisual(barcodeLimpio);
       agregarRegistroOfflineVisual(registroOffline);
 
       return;
@@ -1589,6 +1640,8 @@ async function escanearCodigo(barcode, viajeRegistro = viajeActivo) {
 
       setStatus(`${barcodeLimpio} → ${mensaje}`, "error");
 
+      quitarRegistroPendienteVisual(barcodeLimpio);
+
       console.error(
         "Error backend /api/escanear:",
         JSON.stringify(data, null, 2)
@@ -1598,6 +1651,7 @@ async function escanearCodigo(barcode, viajeRegistro = viajeActivo) {
     }
 
     if (!mostrarEnPantallaActual) {
+      quitarRegistroPendienteVisual(barcodeLimpio);
       setStatus(`${barcodeLimpio} procesado para ${viajeRegistro}`, "ok");
       return;
     }
@@ -1613,6 +1667,7 @@ async function escanearCodigo(barcode, viajeRegistro = viajeActivo) {
       agregarRegistroProcesadoVisual(data.data, "OK");
 
     } else if (data.resultado === "YA_REGISTRADO") {
+      quitarRegistroPendienteVisual(barcodeLimpio);
       duplicadosSesionActual += 1;
 
       cacheYaRegistrados.unshift({
@@ -1644,12 +1699,14 @@ async function escanearCodigo(barcode, viajeRegistro = viajeActivo) {
       agregarRegistroProcesadoVisual(data.data, "REREGISTRADO");
 
     } else if (data.resultado === "NO_EXISTE") {
+      quitarRegistroPendienteVisual(barcodeLimpio);
       erroresSesionActual += 1;
       pintarDuplicadosYErrores();
 
       setStatus(`${barcodeLimpio} → NO EXISTE`, "error");
 
     } else {
+      quitarRegistroPendienteVisual(barcodeLimpio);
       setStatus(`Escaneo procesado: ${barcodeLimpio}`, "ok");
     }
 
@@ -1657,6 +1714,7 @@ async function escanearCodigo(barcode, viajeRegistro = viajeActivo) {
 
   } catch (error) {
     console.error("Error escaneando:", error);
+    quitarRegistroPendienteVisual(barcode);
     setStatus("Error escaneando", "error");
   }
 }
@@ -1968,6 +2026,7 @@ function badgeResultado(resultado) {
   if (resultado === "NO_EXISTE") return `<span class="badge badge-bad">NO EXISTE</span>`;
   if (resultado === "REREGISTRADO") return `<span class="badge badge-ok">RE-REGISTRADO</span>`;
   if (resultado === "OFFLINE") return `<span class="badge badge-offline">OFFLINE</span>`;
+  if (resultado === "PROCESANDO") return `<span class="badge badge-offline">PROCESANDO</span>`;
   return resultado || "";
 }
 
@@ -2027,6 +2086,10 @@ function renderDetalle(data) {
     let acciones = row.resultado === "OFFLINE"
       ? `<span class="badge badge-offline">Pendiente</span>`
       : `<button class="btn-delete" data-barcode="${row.barcode}">Eliminar</button>`;
+
+    if (row.resultado === "PROCESANDO") {
+      acciones = `<span class="badge badge-offline">Esperando</span>`;
+    }
 
     if (row.resultado === "YA_REGISTRADO" && row.puede_reregistrar === true) {
       acciones += ` <button class="btn-primary btn-reregistrar-tabla" data-barcode="${row.barcode}">Re-registrar</button>`;
@@ -2227,6 +2290,8 @@ async function quitarRegistroManualDesdeResumen(data) {
 let lectorBuffer = "";
 let lectorProcesando = false;
 let colaCodigos = [];
+let escaneosActivos = 0;
+const MAX_ESCANEOS_PARALELOS = 4;
 
 function limpiarLectorGlobal() {
   lectorBuffer = "";
@@ -2283,6 +2348,11 @@ function encolarCodigo(codigoRaw) {
 
   if (!codigo) return;
 
+  if (!viajeActivo) {
+    setStatus("Debes activar un viaje antes de escanear", "warn");
+    return;
+  }
+
   const esNumero = /^\d{2,}$/.test(codigo);
 
   // Acepta letra + número + cualquier cantidad de números después
@@ -2298,26 +2368,36 @@ function encolarCodigo(codigoRaw) {
     codigo,
     viaje: viajeActivo
   });
+
+  agregarRegistroPendienteVisual(codigo, viajeActivo);
   procesarColaCodigos();
 }
-async function procesarColaCodigos() {
-  if (lectorProcesando) return;
+function procesarColaCodigos() {
+  while (colaCodigos.length > 0 && escaneosActivos < MAX_ESCANEOS_PARALELOS) {
+    const item = colaCodigos.shift();
 
-  lectorProcesando = true;
-  escaneando = true;
+    lectorProcesando = true;
+    escaneando = true;
+    escaneosActivos += 1;
 
-  try {
-    while (colaCodigos.length > 0) {
-      const item = colaCodigos.shift();
-      await escanearCodigo(item.codigo, item.viaje);
-    }
-  } finally {
-    lectorProcesando = false;
-    escaneando = false;
+    escanearCodigo(item.codigo, item.viaje)
+      .finally(() => {
+        escaneosActivos -= 1;
 
-    setTimeout(() => {
-      focusBarcodeSeguro();
-    }, 80);
+        if (colaCodigos.length > 0) {
+          procesarColaCodigos();
+          return;
+        }
+
+        if (escaneosActivos === 0) {
+          lectorProcesando = false;
+          escaneando = false;
+
+          setTimeout(() => {
+            focusBarcodeSeguro();
+          }, 80);
+        }
+      });
   }
 }
 
