@@ -686,6 +686,7 @@ app.get("/api/general/bloque/:bloque", async (req, res) => {
         COALESCE(tamano, '') AS tamano,
         tallos,
         etapa,
+        COALESCE(form, '') AS form,
         COUNT(*)::int AS tabacos,
         COALESCE(SUM(tallos), 0)::int AS suma_tallos
       FROM public.registros
@@ -702,8 +703,8 @@ app.get("/api/general/bloque/:bloque", async (req, res) => {
     }
 
     query += `
-      GROUP BY bloque, variedad, tamano, tallos, etapa
-      ORDER BY variedad, tamano, tallos
+      GROUP BY bloque, variedad, tamano, tallos, etapa, COALESCE(form, '')
+      ORDER BY variedad, tamano, tallos, form
     `;
 
     const r = await pool.query(query, params);
@@ -1559,13 +1560,14 @@ app.get("/api/general/variedad/:variedad", async (req, res) => {
         COALESCE(tamano, 'NA') AS tamano,
         tallos,
         COALESCE(etapa, 'Ingreso') AS etapa,
+        COALESCE(form, '') AS form,
         COUNT(*) AS tabacos,
         SUM(COALESCE(tallos, 0)) AS suma_tallos
       FROM registros
       WHERE variedad = $1
         AND created_at::date = CURRENT_DATE
-      GROUP BY bloque, variedad, COALESCE(tamano, 'NA'), tallos, COALESCE(etapa, 'Ingreso')
-      ORDER BY bloque ASC, variedad ASC, tamano ASC
+      GROUP BY bloque, variedad, COALESCE(tamano, 'NA'), tallos, COALESCE(etapa, 'Ingreso'), COALESCE(form, '')
+      ORDER BY bloque ASC, variedad ASC, tamano ASC, form ASC
     `, [variedad]);
 
     res.json({

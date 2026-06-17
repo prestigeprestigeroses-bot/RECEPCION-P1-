@@ -926,7 +926,7 @@ function limpiarConsultaGeneral() {
 
   setHTML(generalBloqueBody, `
     <tr>
-      <td colspan="8" class="empty-row">Selecciona un bloque o variedad para consultar.</td>
+      <td colspan="9" class="empty-row">Selecciona un bloque o variedad para consultar.</td>
     </tr>
   `);
   limpiarTotalesResumenGeneral();
@@ -1068,6 +1068,7 @@ function renderResumenGeneralFiltro(rows) {
       <td>${row.tamano ?? ""}</td>
       <td>${row.tallos ?? ""}</td>
       <td>${row.etapa ?? ""}</td>
+      <td>${row.form || "-"}</td>
       <td class="cell-green" data-general-tabacos>${row.tabacos ?? 0}</td>
       <td class="cell-blue" data-general-suma>${row.suma_tallos ?? 0}</td>
       <td>
@@ -1078,6 +1079,7 @@ function renderResumenGeneralFiltro(rows) {
           data-tamano="${row.tamano ?? ""}"
           data-tallos="${tallos}"
           data-etapa="${row.etapa || "Ingreso"}"
+          data-form="${row.form || ""}"
           title="Agregar un registro igual"
         >+</button>
 
@@ -1088,6 +1090,7 @@ function renderResumenGeneralFiltro(rows) {
           data-tamano="${row.tamano ?? ""}"
           data-tallos="${tallos}"
           data-etapa="${row.etapa || "Ingreso"}"
+          data-form="${row.form || ""}"
           title="Quitar un registro igual"
         >-</button>
       </td>
@@ -1151,7 +1154,7 @@ function datosResumenGeneralDesdeBoton(btn) {
     tamano: btn.dataset.tamano,
     tallos: Number(btn.dataset.tallos || 0),
     etapa: btn.dataset.etapa || "Ingreso",
-    form: "",
+    form: btn.dataset.form || "",
     tipo: "",
     scope: "general"
   };
@@ -1221,7 +1224,7 @@ async function cargarResumenGeneralPorBloque(bloque, variedad = "") {
       limpiarTotalesResumenGeneral();
       setHTML(generalBloqueBody, `
         <tr>
-          <td colspan="8" class="empty-row">Error cargando el resumen del bloque.</td>
+          <td colspan="9" class="empty-row">Error cargando el resumen del bloque.</td>
         </tr>
       `);
       return;
@@ -1233,7 +1236,7 @@ async function cargarResumenGeneralPorBloque(bloque, variedad = "") {
       limpiarTotalesResumenGeneral();
       setHTML(generalBloqueBody, `
         <tr>
-          <td colspan="8" class="empty-row">No hay datos para este filtro.</td>
+          <td colspan="9" class="empty-row">No hay datos para este filtro.</td>
         </tr>
       `);
       return;
@@ -1244,7 +1247,7 @@ async function cargarResumenGeneralPorBloque(bloque, variedad = "") {
     limpiarTotalesResumenGeneral();
     setHTML(generalBloqueBody, `
       <tr>
-        <td colspan="8" class="empty-row">Error cargando el resumen del bloque.</td>
+        <td colspan="9" class="empty-row">Error cargando el resumen del bloque.</td>
       </tr>
     `);
   }
@@ -1357,7 +1360,7 @@ async function cargarResumenGeneralPorVariedadGlobal(variedad) {
 
       setHTML(generalBloqueBody, `
         <tr>
-          <td colspan="8" class="empty-row">Error cargando el resumen de la variedad.</td>
+          <td colspan="9" class="empty-row">Error cargando el resumen de la variedad.</td>
         </tr>
       `);
       return;
@@ -1371,7 +1374,7 @@ async function cargarResumenGeneralPorVariedadGlobal(variedad) {
 
       setHTML(generalBloqueBody, `
         <tr>
-          <td colspan="8" class="empty-row">No hay datos para esta variedad.</td>
+          <td colspan="9" class="empty-row">No hay datos para esta variedad.</td>
         </tr>
       `);
       return;
@@ -1397,7 +1400,7 @@ async function cargarResumenGeneralPorVariedadGlobal(variedad) {
 
     setHTML(generalBloqueBody, `
       <tr>
-        <td colspan="8" class="empty-row">Error cargando el resumen de la variedad.</td>
+        <td colspan="9" class="empty-row">Error cargando el resumen de la variedad.</td>
       </tr>
     `);
   }
