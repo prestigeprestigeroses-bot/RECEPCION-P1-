@@ -1388,13 +1388,33 @@ app.get("/api/viajes/:nombre/resumen-db", async (req, res) => {
   try {
     const nombre = decodeURIComponent(req.params.nombre);
 
+    const estado = await pool.query(`
+      SELECT
+        MAX(CASE WHEN clave = 'viaje_activo' THEN valor END) AS viaje_activo,
+        MAX(CASE WHEN clave = 'viaje_activo_inicio' THEN valor END) AS inicio
+      FROM sistema_estado
+      WHERE clave IN ('viaje_activo', 'viaje_activo_inicio')
+    `);
+
+    const viajeActivoActual = estado.rows[0]?.viaje_activo;
+    const inicio = estado.rows[0]?.inicio;
+
+    if (viajeActivoActual !== nombre || !inicio) {
+      return res.json({
+        ok: true,
+        data: {
+          ok: 0,
+          reregistrados: 0
+        }
+      });
+    }
+
     const r = await pool.query(`
       SELECT COUNT(*) AS total
       FROM registros
       WHERE viaje = $1
-        AND created_at >= CURRENT_DATE
-        AND created_at < CURRENT_DATE + INTERVAL '1 day'
-    `, [nombre]);
+        AND created_at >= $2::timestamp
+    `, [nombre, inicio]);
 
     return res.json({
       ok: true,
@@ -1418,6 +1438,24 @@ app.get("/api/viajes/:nombre/resumen-variedad-db", async (req, res) => {
   try {
     const nombre = decodeURIComponent(req.params.nombre);
 
+    const estado = await pool.query(`
+      SELECT
+        MAX(CASE WHEN clave = 'viaje_activo' THEN valor END) AS viaje_activo,
+        MAX(CASE WHEN clave = 'viaje_activo_inicio' THEN valor END) AS inicio
+      FROM sistema_estado
+      WHERE clave IN ('viaje_activo', 'viaje_activo_inicio')
+    `);
+
+    const viajeActivoActual = estado.rows[0]?.viaje_activo;
+    const inicio = estado.rows[0]?.inicio;
+
+    if (viajeActivoActual !== nombre || !inicio) {
+      return res.json({
+        ok: true,
+        data: []
+      });
+    }
+
     const r = await pool.query(`
       SELECT
         COALESCE(CAST(bloque AS text), '') AS bloque,
@@ -1431,8 +1469,7 @@ app.get("/api/viajes/:nombre/resumen-variedad-db", async (req, res) => {
         COALESCE(SUM(tallos), 0)::int AS total_tallos
       FROM registros
       WHERE viaje = $1
-        AND created_at >= CURRENT_DATE
-        AND created_at < CURRENT_DATE + INTERVAL '1 day'
+        AND created_at >= $2::timestamp
       GROUP BY
         COALESCE(CAST(bloque AS text), ''),
         COALESCE(variedad, ''),
@@ -1442,7 +1479,7 @@ app.get("/api/viajes/:nombre/resumen-variedad-db", async (req, res) => {
         COALESCE(tipo, ''),
         COALESCE(tallos, 0)
       ORDER BY bloque ASC, variedad ASC, tamano ASC, form ASC
-    `, [nombre]);
+    `, [nombre, inicio]);
 
     return res.json({
       ok: true,
