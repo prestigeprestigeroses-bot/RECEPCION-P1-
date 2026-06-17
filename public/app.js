@@ -262,7 +262,6 @@ function agregarRegistroProcesadoVisual(data, resultado) {
   };
 
   cacheDetalle.unshift(row);
-  cacheDetalle = cacheDetalle.slice(0, 120);
 
   if (!mostrandoRegistrosHistoricos) {
     renderDetalle(cacheDetalle);
@@ -297,7 +296,6 @@ function agregarRegistroPendienteVisual(barcode, viajeRegistro) {
     observacion: "Procesando registro..."
   });
 
-  cacheDetalle = cacheDetalle.slice(0, 120);
   renderDetalle(cacheDetalle);
 }
 
@@ -2410,7 +2408,7 @@ function renderYaRegistrados(data = null) {
 function renderDetalle(data) {
   if (!detalleBody) return;
 
-  const visibles = data || [];
+  const visibles = (data || []).slice(0, 300);
 
   if (!visibles.length) {
     setHTML(detalleBody, `

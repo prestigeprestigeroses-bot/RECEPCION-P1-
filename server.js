@@ -977,7 +977,7 @@ app.get("/api/viajes/:nombre/detalle", async (req, res) => {
       WHERE viaje = $1
         AND created_at >= $2::timestamp
       ORDER BY created_at DESC
-      LIMIT 200
+      LIMIT 5000
     `, [nombre, inicio]);
 
     const data = r.rows.map(row => ({
