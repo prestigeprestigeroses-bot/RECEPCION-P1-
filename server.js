@@ -1414,6 +1414,50 @@ app.get("/api/viajes/:nombre/resumen-db", async (req, res) => {
   }
 });
 
+app.get("/api/viajes/:nombre/resumen-variedad-db", async (req, res) => {
+  try {
+    const nombre = decodeURIComponent(req.params.nombre);
+
+    const r = await pool.query(`
+      SELECT
+        COALESCE(CAST(bloque AS text), '') AS bloque,
+        COALESCE(variedad, '') AS variedad,
+        COALESCE(tamano, 'NA') AS tamano,
+        COALESCE(form, '') AS form,
+        COALESCE(etapa, 'Ingreso') AS etapa,
+        COALESCE(tipo, '') AS tipo,
+        COALESCE(tallos, 0)::int AS tallos,
+        COUNT(*)::int AS tabacos,
+        COALESCE(SUM(tallos), 0)::int AS total_tallos
+      FROM registros
+      WHERE viaje = $1
+        AND created_at >= CURRENT_DATE
+        AND created_at < CURRENT_DATE + INTERVAL '1 day'
+      GROUP BY
+        COALESCE(CAST(bloque AS text), ''),
+        COALESCE(variedad, ''),
+        COALESCE(tamano, 'NA'),
+        COALESCE(form, ''),
+        COALESCE(etapa, 'Ingreso'),
+        COALESCE(tipo, ''),
+        COALESCE(tallos, 0)
+      ORDER BY bloque ASC, variedad ASC, tamano ASC, form ASC
+    `, [nombre]);
+
+    return res.json({
+      ok: true,
+      data: r.rows
+    });
+
+  } catch (err) {
+    console.error("Error resumen-variedad-db:", err);
+    return res.status(500).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
 // =====================================================
 // QUITAR UN REGISTRO MANUAL DESDE RESUMEN
 // =====================================================
