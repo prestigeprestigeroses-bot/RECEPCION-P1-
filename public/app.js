@@ -777,6 +777,7 @@ function setAcumuladoSeguro(valor) {
 
 function focusBarcodeSeguro() {
   if (!barcodeInput) return;
+  if (!puedeRecuperarFoco()) return;
 
   const activo = document.activeElement;
   const tag = activo?.tagName?.toLowerCase();
@@ -796,6 +797,23 @@ function focusBarcodeSeguro() {
 
 function focusBarcodeSinScroll() {
   focusBarcodeSeguro();
+}
+
+function activarLectorAutomatico(intentos = 8, intervalo = 180) {
+  let intentosHechos = 0;
+
+  const intentar = () => {
+    intentosHechos += 1;
+    focusBarcodeSeguro();
+
+    if (document.activeElement === barcodeInput || intentosHechos >= intentos) {
+      return;
+    }
+
+    setTimeout(intentar, intervalo);
+  };
+
+  intentar();
 }
 
 function conservarPosicionPantalla(fn) {
@@ -3459,6 +3477,34 @@ if (false) document.addEventListener("visibilitychange", () => {
   }
 });
 
+document.addEventListener("pointerup", (e) => {
+  const target = e.target;
+  if (!target) return;
+
+  const tag = target.tagName?.toLowerCase();
+
+  if (tag === "select" || tag === "option" || tag === "textarea") return;
+  if (tag === "input" && target !== barcodeInput) return;
+
+  setTimeout(() => {
+    if (!escaneando) focusBarcodeSeguro();
+  }, 120);
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+
+  setTimeout(() => {
+    if (!escaneando) activarLectorAutomatico(5, 180);
+  }, 200);
+});
+
+window.addEventListener("focus", () => {
+  setTimeout(() => {
+    if (!escaneando) activarLectorAutomatico(5, 180);
+  }, 150);
+});
+
 async function activarViajeInicialAutomatico() {
   const contenedor = document.getElementById("viajes-botones");
   if (!contenedor) return;
@@ -3487,6 +3533,7 @@ async function activarViajeInicialAutomatico() {
   }
 
   await activarViaje(nombreViaje);
+  activarLectorAutomatico(6, 180);
 }
 function actualizarEstadoInternet() {
   if (!internetStatus) return;
@@ -3509,8 +3556,8 @@ window.addEventListener("load", async () => {
   actualizarEstadoInternet();
 
   setTimeout(() => {
-    focusBarcodeSeguro();
-  }, 300);
+    activarLectorAutomatico(12, 180);
+  }, 150);
 
   setInterval(() => {
     if (escaneando) return;
