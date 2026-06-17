@@ -799,6 +799,18 @@ function focusBarcodeSinScroll() {
   focusBarcodeSeguro();
 }
 
+function recuperarLectorDespuesDeControl(control) {
+  setTimeout(() => {
+    try {
+      control?.blur?.();
+    } catch (e) {
+      // Si el control ya no existe, solo intenta recuperar el lector.
+    }
+
+    activarLectorAutomatico(8, 120);
+  }, 80);
+}
+
 function activarLectorAutomatico(intentos = 8, intervalo = 180) {
   let intentosHechos = 0;
 
@@ -3326,74 +3338,86 @@ if (ocultarRegistrosViajeBtn) {
 
 if (variedadGeneralSelect) {
   variedadGeneralSelect.addEventListener("change", async () => {
-    const bloque = bloqueGeneralSelect?.value || "";
-    const variedad = variedadGeneralSelect.value;
+    try {
+      const bloque = bloqueGeneralSelect?.value || "";
+      const variedad = variedadGeneralSelect.value;
 
-    limpiarTotalesVariedadGlobal();
+      limpiarTotalesVariedadGlobal();
 
-    if (variedadGlobalSelect) {
-      variedadGlobalSelect.value = "";
+      if (variedadGlobalSelect) {
+        variedadGlobalSelect.value = "";
+      }
+
+      guardarEstadoUI();
+
+      await cargarResumenGeneralPorBloque(bloque, variedad);
+      await cargarDetalleGeneralPorBloque(bloque, variedad);
+    } finally {
+      recuperarLectorDespuesDeControl(variedadGeneralSelect);
     }
-
-    guardarEstadoUI();
-
-    await cargarResumenGeneralPorBloque(bloque, variedad);
-    await cargarDetalleGeneralPorBloque(bloque, variedad);
   });
 }
 if (bloqueGeneralSelect) {
   bloqueGeneralSelect.addEventListener("change", async () => {
-    const bloque = bloqueGeneralSelect.value;
+    try {
+      const bloque = bloqueGeneralSelect.value;
 
-    limpiarTotalesVariedadGlobal();
+      limpiarTotalesVariedadGlobal();
 
-    if (variedadGlobalSelect) {
-      variedadGlobalSelect.value = "";
+      if (variedadGlobalSelect) {
+        variedadGlobalSelect.value = "";
+      }
+
+      if (!bloque) {
+        limpiarConsultaGeneral();
+        return;
+      }
+
+      guardarEstadoUI();
+
+      await cargarVariedadesGeneralesPorBloque(bloque, "");
+
+      if (variedadGeneralSelect) {
+        variedadGeneralSelect.value = "";
+      }
+
+      await cargarResumenGeneralPorBloque(bloque, "");
+      await cargarDetalleGeneralPorBloque(bloque, "");
+    } finally {
+      recuperarLectorDespuesDeControl(bloqueGeneralSelect);
     }
-
-    if (!bloque) {
-      limpiarConsultaGeneral();
-      return;
-    }
-
-    guardarEstadoUI();
-
-    await cargarVariedadesGeneralesPorBloque(bloque, "");
-
-    if (variedadGeneralSelect) {
-      variedadGeneralSelect.value = "";
-    }
-
-    await cargarResumenGeneralPorBloque(bloque, "");
-    await cargarDetalleGeneralPorBloque(bloque, "");
   });
 }
 if (variedadGlobalSelect) {
   variedadGlobalSelect.addEventListener("change", async () => {
-    const variedad = variedadGlobalSelect.value || "";
+    try {
+      const variedad = variedadGlobalSelect.value || "";
 
-    if (!variedad) {
-      limpiarTotalesVariedadGlobal();
-      limpiarConsultaGeneral();
-      return;
+      if (!variedad) {
+        limpiarTotalesVariedadGlobal();
+        limpiarConsultaGeneral();
+        return;
+      }
+
+      if (bloqueGeneralSelect) {
+        bloqueGeneralSelect.value = "";
+      }
+
+      if (variedadGeneralSelect) {
+        variedadGeneralSelect.innerHTML = `
+          <option value="">Seleccionar variedad</option>
+        `;
+      }
+
+      guardarEstadoUI();
+
+      await conservarPosicionPantalla(async () => {
+        await cargarResumenGeneralPorVariedadGlobal(variedad);
+        await cargarDetalleGeneralPorVariedadGlobal(variedad);
+      });
+    } finally {
+      recuperarLectorDespuesDeControl(variedadGlobalSelect);
     }
-
-    if (bloqueGeneralSelect) {
-      bloqueGeneralSelect.value = "";
-    }
-
-    if (variedadGeneralSelect) {
-      variedadGeneralSelect.innerHTML = `
-        <option value="">Seleccionar variedad</option>
-      `;
-    }
-
-    guardarEstadoUI();
-
-    await conservarPosicionPantalla(async () => {
-      await cargarResumenGeneralPorVariedadGlobal(variedad);
-      await cargarDetalleGeneralPorVariedadGlobal(variedad);
-    });
   });
 }
 /////////////////////// AUTOFOCUS ESCANER ///////////////////////////////
