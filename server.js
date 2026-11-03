@@ -1747,6 +1747,8 @@ app.get("/api/viajes/:nombre/detalle-hoy", async (req, res) => {
 // =====================================================
 // VIAJE ACTIVO DESDE POSTGRESQL
 // ====================================================
+require("./registros-por-fecha")(app, pool);
+
 app.listen(port, () => {
   console.log(`✅ Servidor activo en http://localhost:${port}`);
 });

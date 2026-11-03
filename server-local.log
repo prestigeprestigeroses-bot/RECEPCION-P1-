@@ -1,0 +1,5 @@
+[dotenv@17.3.1] injecting env (1) from .env -- tip: ⚙️  enable debug logging with { debug: true }
+DATABASE_URL existe: true
+✅ Servidor activo en http://localhost:3000
+✅ Conectado a PostgreSQL
+✅ Conectado a PostgreSQL

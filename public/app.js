@@ -2957,6 +2957,7 @@ function procesarColaCodigos() {
 }
 
 document.addEventListener("keydown", async (e) => {
+  if (e.target.closest?.("#registros-fechas")) return;
   if (e.ctrlKey || e.altKey || e.metaKey) return;
 
   const caracter = obtenerCaracterDesdeTecla(e);

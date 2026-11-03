@@ -484,3 +484,16 @@ th {
 #detalle .section-header h2 {
   margin: 0;
 }
+.date-records {
+  max-width: 1500px;
+  margin: 24px auto;
+  padding: 0 20px 24px;
+  color: #f4fff8;
+}
+.date-records details { border-top: 1px solid #367357; padding: 16px 0; }
+.date-records summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
+.date-fields { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; margin-top: 16px; }
+.date-fields label { display: grid; gap: 6px; flex: 1 1 180px; min-width: 0; }
+.date-fields input, .date-fields select { width: 100%; min-width: 0; padding: 10px; background: #0b241b; color: #fff; border: 1px solid #367357; border-radius: 6px; }
+.date-records button { background: #187e49; color: #fff; padding: 12px 16px; }
+.date-records button:disabled { opacity: .6; cursor: wait; }
