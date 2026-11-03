@@ -491,7 +491,15 @@ th {
   color: #f4fff8;
 }
 .date-records details { border-top: 1px solid #367357; padding: 16px 0; }
+.date-records > .date-tools { border-top: 0; padding: 4px 0; }
+.date-records > .date-tools > summary { font-size: 13px; font-weight: 500; color: #a8c9b8; width: fit-content; }
+.date-records > .date-tools[open] > summary { margin-bottom: 12px; }
+.date-fields select:disabled { opacity: .65; cursor: not-allowed; }
 .date-records summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
+.date-records .date-entry-toggle { display: flex; align-items: center; justify-content: center; list-style: none; width: 32px; height: 32px; padding: 0; border: 1px solid #367357; border-radius: 6px; font-size: 20px; }
+.date-records .date-entry-toggle::-webkit-details-marker { display: none; }
+#ingreso-fecha-panel[open] > .date-entry-toggle span { transform: rotate(45deg); }
+.date-records .date-entry-toggle:focus-visible { outline: 2px solid #b8e7c9; outline-offset: 3px; }
 .date-fields { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; margin-top: 16px; }
 .date-fields label { display: grid; gap: 6px; flex: 1 1 180px; min-width: 0; }
 .date-fields input, .date-fields select { width: 100%; min-width: 0; padding: 10px; background: #0b241b; color: #fff; border: 1px solid #367357; border-radius: 6px; }
