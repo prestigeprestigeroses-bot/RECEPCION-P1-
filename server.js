@@ -9,6 +9,11 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) res.set('Cache-Control', 'no-store');
+  else if (/\.(js|css|html)$/.test(req.path) || req.path === '/') res.set('Cache-Control', 'no-cache');
+  next();
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 const pool = new Pool({
@@ -256,160 +261,7 @@ app.get("/api/viaje-activo-global", (_req, res) => {
 // =====================================================
 // ESCANEO PRINCIPAL
 // =====================================================
-app.post("/api/escanear", async (req, res) => {
-  try {
-    const viajeNombre = String(req.body.viaje || "").trim();
-
-    const codeInput = String(req.body.barcode || "")
-      .replace(/[^A-Za-z0-9]/g, "")
-.toUpperCase()
-      .trim();
-
-    if (!viajeNombre) {
-      return res.status(400).json({
-        ok: false,
-        resultado: "SIN_VIAJE",
-        error: "Debes seleccionar un viaje"
-      });
-    }
-
-    if (!codeInput) {
-      return res.status(400).json({
-        ok: false,
-        resultado: "CODIGO_VACIO",
-        error: "Código vacío o inválido"
-      });
-    }
-
-    if (codeInput.length < 2) {
-      return res.status(400).json({
-        ok: false,
-        resultado: "CODIGO_CORTO",
-        error: `Código demasiado corto: ${codeInput}`
-      });
-    }
-
-    asegurarViaje(viajeNombre);
-
-    const barcode = codeInput;
-    const tipo = codeInput.slice(0, 2);
-    const serial = codeInput.slice(2);
-
-    const tipoRow = await pool.query(
-      `
-      SELECT
-        tipo,
-        variedad,
-        bloque,
-        tamano,
-        tallos
-      FROM tipos_variedad
-      WHERE tipo = $1
-      LIMIT 1
-      `,
-      [tipo]
-    );
-
-    if (!tipoRow.rowCount) {
-      return res.json({
-        ok: true,
-        resultado: "NO_EXISTE",
-        mensaje: `El tipo ${tipo} no existe en tipos_variedad`,
-        data: {
-          barcode,
-          tipo,
-          serial,
-          bloque: null,
-          variedad: null,
-          tamano: null,
-          tallos: null,
-          resultado: "NO_EXISTE",
-          observacion: `Tipo ${tipo} no existe en tipos_variedad`
-        }
-      });
-    }
-
-    const t = tipoRow.rows[0];
-
-    const insert = await pool.query(
-      `
-      INSERT INTO registros (
-        barcode,
-        tipo,
-        serial,
-        variedad,
-        bloque,
-        tamano,
-        tallos,
-        etapa,
-        viaje
-      )
-      VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9
-      )
-      ON CONFLICT (barcode)
-      DO NOTHING
-      RETURNING barcode
-      `,
-      [
-        barcode,
-        tipo,
-        serial,
-        t.variedad,
-        t.bloque,
-        t.tamano,
-        t.tallos,
-        "Ingreso",
-        viajeNombre
-      ]
-    );
-
-    if (!insert.rowCount) {
-      return res.json({
-        ok: true,
-        resultado: "YA_REGISTRADO",
-        mensaje: "El barcode ya existe en registros",
-        data: {
-          barcode,
-          tipo,
-          serial,
-          variedad: t.variedad,
-          bloque: t.bloque,
-          tamano: t.tamano,
-          tallos: t.tallos,
-          resultado: "YA_REGISTRADO",
-          observacion: "El barcode ya existe en registros"
-        }
-      });
-    }
-
-    return res.json({
-      ok: true,
-      resultado: "OK",
-      mensaje: "Escaneo registrado correctamente",
-      data: {
-        barcode,
-        tipo,
-        serial,
-        variedad: t.variedad,
-        bloque: t.bloque,
-        tamano: t.tamano,
-        tallos: t.tallos,
-        resultado: "OK",
-        observacion: "Escaneo registrado correctamente"
-      }
-    });
-
-  } catch (err) {
-    console.error("❌ /api/escanear:", err);
-
-    return res.status(500).json({
-      ok: false,
-      resultado: "ERROR_SERVIDOR",
-      error: err.message
-    });
-  }
-});
+app.post("/api/escanear", require("./escaneo")(pool));
 
 // =====================================================
 // RE-REGISTRAR
@@ -424,9 +276,9 @@ app.post("/api/reregistrar", async (req, res) => {
       return res.status(400).json({ ok: false, error: "No hay viaje activo" });
     }
 
-    const viaje = esGeneral ? null : asegurarViaje(viajeNombre);
+    const viaje = asegurarViaje(viajeNombre);
 
-    if (!esGeneral && !viaje.activa) {
+    if (!viaje.activa) {
       return res.status(400).json({ ok: false, error: "El viaje está finalizado" });
     }
 
