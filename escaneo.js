@@ -21,29 +21,33 @@ module.exports = function crearEscaneo(pool) {
     try {
       await preparar();
       const tipo = barcode.slice(0, 2);
-      const catalogo = await pool.query('SELECT tipo, variedad, bloque, tamano, tallos FROM public.tipos_variedad WHERE tipo = $1 LIMIT 1', [tipo]);
-      if (!catalogo.rowCount) {
-        return res.json({ ok: true, resultado: 'NO_EXISTE', data: { barcode, tipo }, mensaje: `El tipo ${tipo} no existe en el catalogo` });
-      }
-      const t = catalogo.rows[0];
-      const insert = await pool.query(`
-        INSERT INTO public.registros
+      const consulta = await pool.query(`
+        WITH catalogo AS (
+          SELECT tipo, variedad, bloque, tamano, tallos
+          FROM public.tipos_variedad WHERE tipo = $2 LIMIT 1
+        ), insertado AS (
+          INSERT INTO public.registros
           (barcode, tipo, serial, variedad, bloque, tamano, tallos, etapa, viaje, form, solicitud_escaneo)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,'Ingreso',$8,$9,$10)
-        ON CONFLICT (barcode) DO NOTHING RETURNING *
-      `, [barcode, tipo, barcode.slice(2), t.variedad, t.bloque, t.tamano, t.tallos, viaje, form, solicitud]);
-      let row = insert.rows[0];
+          SELECT $1, tipo, $3, variedad, bloque, tamano, tallos, 'Ingreso', $4, $5, $6
+          FROM catalogo
+          ON CONFLICT (barcode) DO NOTHING RETURNING *
+        )
+        SELECT (SELECT row_to_json(i) FROM insertado i) AS insertado,
+          (SELECT row_to_json(r) FROM public.registros r WHERE barcode = $1 LIMIT 1) AS existente,
+          EXISTS(SELECT 1 FROM catalogo) AS tipo_valido
+      `, [barcode, tipo, barcode.slice(2), viaje, form, solicitud]);
+      const datos = consulta.rows[0];
+      let row = datos.insertado || datos.existente;
       if (!row) {
-        const existente = await pool.query('SELECT * FROM public.registros WHERE barcode = $1 LIMIT 1', [barcode]);
-        row = existente.rows[0];
-        if (!row) {
-          return res.status(409).json({ ok: false, error: 'El registro cambio durante el envio. Se reintentara.' });
+        if (!datos.tipo_valido) {
+          return res.json({ ok: true, resultado: 'NO_EXISTE', data: { barcode, tipo }, mensaje: `El tipo ${tipo} no existe en el catalogo` });
         }
+        return res.status(409).json({ ok: false, error: 'El registro cambio durante el envio. Se reintentara.' });
       }
       const mismoEnvio = row.solicitud_escaneo === solicitud;
-      const resultado = insert.rowCount || mismoEnvio ? 'OK' : 'YA_REGISTRADO';
+      const resultado = datos.insertado || mismoEnvio ? 'OK' : 'YA_REGISTRADO';
       return res.json({
-        ok: true, resultado, recuperado: !insert.rowCount && mismoEnvio,
+        ok: true, resultado, recuperado: !datos.insertado && mismoEnvio,
         data: { ...row, fecha: row.created_at, fechaAnterior: row.created_at, resultado,
           observacion: resultado === 'OK' ? 'Confirmado en la base de datos' : 'El codigo ya existe en la base de datos' }
       });

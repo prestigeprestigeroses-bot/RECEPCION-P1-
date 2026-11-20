@@ -47,6 +47,11 @@ let timerRefrescoPostEscaneo = null;
 let timerRefrescoConsultaGeneral = null;
 let resumenGeneralOperando = false;
 let sincronizandoOffline = false;
+let sincronizacionSolicitada = false;
+let recibirEscaneoDuranteEnvio = null;
+let revisionContadorEscaneos = 0;
+const provisionalesContados = new Set();
+const confirmacionesContadas = new Set();
 
 let duplicadosSesionActual = 0;
 let erroresSesionActual = 0;
@@ -645,10 +650,13 @@ async function pintarPendientesOfflineDelViaje() {
   return pendientes;
 }
 
-async function actualizarTotalesConPendientesOffline(baseTotalActual = null, baseAcumuladoActual = null) {
+async function actualizarTotalesConPendientesOffline(baseTotalActual = null, baseAcumuladoActual = null, revision = revisionContadorEscaneos) {
   if (!viajeActivo) return;
+  if (sincronizandoOffline) return;
 
+  const viajeConsultado = viajeActivo;
   const pendientes = await contarRegistrosOfflinePendientes(viajeActivo);
+  if (sincronizandoOffline || viajeConsultado !== viajeActivo || revision !== revisionContadorEscaneos) return;
 
   if (baseTotalActual !== null) {
     const base = Number(baseTotalActual || 0);
@@ -708,8 +716,28 @@ async function recalcularTotalesViajeDesdeDetalle() {
   }
 }
 
-async function sincronizarRegistrosOffline() {
-  if (sincronizandoOffline || !navigator.onLine) return;
+function aplicarConfirmacionContador(item, resultado) {
+  const clave = item.solicitud_escaneo || item.id;
+  if (confirmacionesContadas.has(clave)) return;
+  confirmacionesContadas.add(clave);
+  const estabaContado = provisionalesContados.delete(item.id) || cacheDetalle.some(row =>
+    row.id_offline === item.id && ["LOCAL", "OFFLINE"].includes(row.resultado));
+  if (item.viaje !== viajeActivo) return;
+  revisionContadorEscaneos += 1;
+  if (estabaContado && ["YA_REGISTRADO", "NO_EXISTE"].includes(resultado)) {
+    setText(totalEscaneados, Math.max(0, Number(totalEscaneados?.textContent || 0) - 1));
+    setAcumuladoSeguro(Math.max(0, Number(totalAcumuladoGeneral?.textContent || 0) - 1));
+  }
+}
+
+async function sincronizarRegistrosOffline(nuevoRegistro = null) {
+  if (!navigator.onLine) return;
+  if (sincronizandoOffline) {
+    sincronizacionSolicitada = true;
+    if (nuevoRegistro && recibirEscaneoDuranteEnvio) recibirEscaneoDuranteEnvio(nuevoRegistro);
+    return;
+  }
+  sincronizacionSolicitada = false;
   sincronizandoOffline = true;
   let reintentar = false;
   const enviar = async () => {
@@ -717,18 +745,17 @@ async function sincronizarRegistrosOffline() {
     if (!pendientes.length) return;
     const cola = pendientes.slice();
     let confirmados = 0;
-    const worker = async () => {
-      while (cola.length) {
-        let item = cola.shift();
+    const worker = async (item) => {
         try {
           if (!item.solicitud_escaneo) {
             item = await actualizarRegistroLocal(item, { solicitud_escaneo: crearSolicitudEscaneo() });
-            if (!item) continue;
+            if (!item) return;
           }
           const json = await solicitarEscaneo(item);
           if (!json.ok || !["OK", "REREGISTRADO", "YA_REGISTRADO", "NO_EXISTE"].includes(json.resultado)) {
             throw new Error(json.error || "Respuesta sin confirmacion");
           }
+          aplicarConfirmacionContador(item, json.resultado);
           if (json.resultado === "NO_EXISTE") {
             await actualizarRegistroLocal(item, { estado: "RECHAZADO", motivo: json.mensaje || "Tipo no existe" });
           } else {
@@ -745,6 +772,7 @@ async function sincronizarRegistrosOffline() {
             }
           }
           if (item.viaje === viajeActivo) {
+            if (["OK", "REREGISTRADO"].includes(json.resultado)) setStatus(item.barcode + ": confirmado en Postgres", "ok");
             if (json.resultado === "YA_REGISTRADO") agregarYaRegistradoPanel(json.data || {}, item.barcode);
             if (json.resultado === "NO_EXISTE") {
               erroresSesionActual += 1;
@@ -759,9 +787,31 @@ async function sincronizarRegistrosOffline() {
           reintentar = true;
           console.warn("Envio conservado para reintentar:", item?.barcode, error.message);
         }
-      }
     };
-    await Promise.all(Array.from({ length: Math.min(4, pendientes.length) }, worker));
+    await new Promise(resolve => {
+      let activos = 0;
+      const incluidos = new Set(pendientes.map(item => item.id));
+      const despachar = () => {
+        while (cola.length && activos < 4) {
+          activos += 1;
+          worker(cola.shift()).finally(() => {
+            activos -= 1;
+            despachar();
+          });
+        }
+        if (!activos && !cola.length) {
+          recibirEscaneoDuranteEnvio = null;
+          resolve();
+        }
+      };
+      recibirEscaneoDuranteEnvio = item => {
+        if (incluidos.has(item.id)) return;
+        incluidos.add(item.id);
+        cola.push(item);
+        despachar();
+      };
+      despachar();
+    });
     if (confirmados) programarRefrescoPostEscaneo();
     const restantes = await obtenerRegistrosOfflinePendientes();
     reintentar = reintentar || restantes.length > 0;
@@ -780,9 +830,11 @@ async function sincronizarRegistrosOffline() {
     reintentar = true;
     console.error("Error de sincronizacion:", error);
   } finally {
+    recibirEscaneoDuranteEnvio = null;
     sincronizandoOffline = false;
-    if (reintentar && navigator.onLine) {
-      setTimeout(() => { sincronizarRegistrosOffline(); }, 3000);
+    if ((reintentar || sincronizacionSolicitada) && navigator.onLine) {
+      const demora = sincronizacionSolicitada ? 0 : 3000;
+      setTimeout(() => { sincronizarRegistrosOffline(); }, demora);
     }
   }
 }
@@ -2179,18 +2231,21 @@ async function refrescarResumen() {
     return;
   }
 
+  const revision = revisionContadorEscaneos;
+  const viajeConsultado = viajeActivo;
   try {
     const res = await fetch(`/api/viajes/${encodeURIComponent(viajeActivo)}/resumen`);
     if (!res.ok) return;
 
     const json = await res.json();
+    if (viajeConsultado !== viajeActivo || revision !== revisionContadorEscaneos) return;
 
     const okSesion = json.sesionActual?.ok ?? 0;
     const reregSesion = json.sesionActual?.reregistrados ?? 0;
     const duplicados = json.sesionActual?.duplicados ?? 0;
     const errores = json.sesionActual?.errores ?? 0;
 
-    await actualizarTotalesConPendientesOffline(okSesion + reregSesion);
+    await actualizarTotalesConPendientesOffline(okSesion + reregSesion, null, revision);
     if (Number(duplicados || 0) > duplicadosSesionActual) {
   duplicadosSesionActual = Number(duplicados || 0);
 }
@@ -2207,6 +2262,8 @@ pintarDuplicadosYErrores();
 
 async function refrescarResumenDesdeBD() {
   if (!viajeActivo) return;
+  const revision = revisionContadorEscaneos;
+  const viajeConsultado = viajeActivo;
 
   try {
     const res = await fetch(`/api/viajes/${encodeURIComponent(viajeActivo)}/resumen-db`);
@@ -2217,13 +2274,13 @@ async function refrescarResumenDesdeBD() {
     }
 
     const json = await res.json();
-    if (!json.ok) return;
+    if (!json.ok || viajeConsultado !== viajeActivo || revision !== revisionContadorEscaneos) return;
 
     const row = json.data || {};
     const ok = Number(row.ok || 0);
     const rereg = Number(row.reregistrados || 0);
 
-    await actualizarTotalesConPendientesOffline(null, ok + rereg);
+    await actualizarTotalesConPendientesOffline(null, ok + rereg, revision);
     await refrescarResumenPorVariedadDesdeBD();
   } catch (err) {
     console.error("Error refrescando resumen DB:", err);
@@ -2918,12 +2975,14 @@ async function registrarEscaneoInstantaneo(codigo) {
       return;
     }
     if (viajeRegistro === viajeActivo) {
+      provisionalesContados.add(registroLocal.id);
+      revisionContadorEscaneos += 1;
       setText(totalEscaneados, Number(totalEscaneados?.textContent || 0) + 1);
       setAcumuladoSeguro(Number(totalAcumuladoGeneral?.textContent || 0) + 1);
       agregarRegistroOfflineVisual(registroLocal);
       setStatus(barcodeLimpio + ": guardado localmente, enviando a Postgres", "warn");
     }
-    sincronizarRegistrosOffline();
+    sincronizarRegistrosOffline(registroLocal);
   } catch (error) {
     console.error("Error guardando escaneo local:", error);
     setStatus("No se pudo guardar el codigo. Vuelve a escanearlo.", "error");

@@ -12,12 +12,12 @@ function base() {
     registros, sinCatalogo() { catalogo = false; },
     async query(sql, params = []) {
       if (sql.startsWith('ALTER TABLE')) return {};
-      if (sql.includes('FROM public.tipos_variedad')) return { rowCount: catalogo ? 1 : 0, rows: catalogo ? [{ tipo: '12', variedad: 'Tiffany', bloque: 8, tamano: 'NA', tallos: 20 }] : [] };
-      if (sql.includes('INSERT INTO')) {
-        if (registros.has(params[0])) return { rowCount: 0, rows: [] };
-        const row = { barcode: params[0], viaje: params[7], form: params[8], solicitud_escaneo: params[9], created_at: '2026-11-20T15:00:00Z' };
+      if (sql.includes('WITH catalogo')) {
+        if (registros.has(params[0])) return { rows: [{ insertado: null, existente: registros.get(params[0]), tipo_valido: catalogo }] };
+        if (!catalogo) return { rows: [{ insertado: null, existente: null, tipo_valido: false }] };
+        const row = { barcode: params[0], viaje: params[3], form: params[4], solicitud_escaneo: params[5], created_at: '2026-11-20T15:00:00Z' };
         registros.set(row.barcode, row);
-        return { rowCount: 1, rows: [row] };
+        return { rows: [{ insertado: row, existente: null, tipo_valido: true }] };
       }
       return { rows: registros.has(params[0]) ? [registros.get(params[0])] : [] };
     }
