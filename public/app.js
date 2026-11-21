@@ -868,6 +868,7 @@ function setAcumuladoSeguro(valor) {
 
 function focusBarcodeSeguro() {
   if (!barcodeInput) return;
+  if (document.hidden) return;
   if (!puedeRecuperarFoco()) return;
 
   const activo = document.activeElement;
@@ -891,15 +892,8 @@ function focusBarcodeSinScroll() {
 }
 
 function recuperarLectorDespuesDeControl(control) {
-  setTimeout(() => {
-    try {
-      control?.blur?.();
-    } catch (e) {
-      // Si el control ya no existe, solo intenta recuperar el lector.
-    }
-
-    activarLectorAutomatico(8, 120);
-  }, 80);
+  if (document.activeElement === control && !esCampoManualLector(control)) control?.blur?.();
+  focusBarcodeSeguro();
 }
 
 function activarLectorAutomatico(intentos = 8, intervalo = 180) {
@@ -3044,83 +3038,58 @@ function procesarColaCodigos() {
   }
 }
 
-document.addEventListener("keydown", async (e) => {
-  if (e.target.closest?.("#registros-fechas")) return;
-  if (e.ctrlKey || e.altKey || e.metaKey) return;
-
-  const caracter = obtenerCaracterDesdeTecla(e);
-
-if (caracter !== null) {
-  e.preventDefault();
-
-  lectorBuffer += caracter;
-  mostrarLectorGlobal();
-
-  return;
+function esCampoManualLector(elemento) {
+  if (!elemento || elemento === barcodeInput) return false;
+  const tag = elemento.tagName?.toLowerCase();
+  return elemento.isContentEditable || tag === "textarea" || tag === "input" ||
+    (tag === "select" && !!elemento.closest?.("#registros-fechas"));
 }
 
-  if (e.key === "Backspace") {
-    if (!lectorBuffer) return;
-
+function manejarTeclaPistola(e) {
+  if (e.ctrlKey || e.altKey || e.metaKey || e.isComposing) return;
+  if (esCampoManualLector(e.target)) return;
+  const consumir = () => {
     e.preventDefault();
-
+    e.stopImmediatePropagation();
+  };
+  const caracter = obtenerCaracterDesdeTecla(e);
+  if (caracter !== null) {
+    consumir();
+    lectorBuffer += caracter;
+    mostrarLectorGlobal();
+    return;
+  }
+  if (e.key === "Backspace" && lectorBuffer) {
+    consumir();
     lectorBuffer = lectorBuffer.slice(0, -1);
     mostrarLectorGlobal();
-
     return;
   }
-
-  if (e.key === "Escape") {
-    e.preventDefault();
-
+  if (e.key === "Escape" && lectorBuffer) {
+    consumir();
     limpiarLectorGlobal();
-    setStatus("Código limpiado", "neutral");
-
     return;
   }
+  if (e.key !== "Enter" && e.key !== "Tab") return;
+  const codigo = lectorBuffer || barcodeInput?.value || "";
+  if (!codigo.trim()) return;
+  consumir();
+  limpiarLectorGlobal();
+  encolarCodigo(codigo);
+  recuperarLectorDespuesDeControl(e.target);
+}
 
-  if (e.key === "Enter" || e.key === "Tab") {
-    if (!lectorBuffer.trim() && !barcodeInput?.value) return;
+// Captura antes que los controles: Enter no pulsa el boton que tenia foco.
+window.addEventListener("keydown", manejarTeclaPistola, true);
 
-    e.preventDefault();
-
-    const codigo = lectorBuffer || barcodeInput?.value || "";
-
-    limpiarLectorGlobal();
-
-    encolarCodigo(codigo);
-  }
-});
-
-// =====================================================
-// FALLBACK PARA PISTOLA QUE ESCRIBE DIRECTO EN EL INPUT
-// =====================================================
 if (barcodeInput) {
   barcodeInput.addEventListener("input", () => {
-    const valor = String(barcodeInput.value || "")
-  .replace(/[^A-Za-z0-9]/g, "")
-  .toUpperCase();
-    if (!valor) return;
-
-    lectorBuffer = valor;
-
-    if (barcodeVisible) {
-      barcodeVisible.textContent = lectorBuffer;
-    }
+    lectorBuffer = normalizarBarcode(barcodeInput.value);
+    mostrarLectorGlobal();
   });
+}
 
-  barcodeInput.addEventListener("keydown", async (e) => {
-    if (e.key !== "Enter" && e.key !== "Tab") return;
-
-    e.preventDefault();
-
-    const codigo = lectorBuffer || barcodeInput.value;
-
-    limpiarLectorGlobal();
-
-    encolarCodigo(codigo);
-  });
-}async function refrescarDetalle() {
+async function refrescarDetalle() {
   if (!detalleBody) return;
 
   if (!viajeActivo) {
@@ -3521,6 +3490,8 @@ function puedeRecuperarFoco() {
 
   if (!activo) return true;
 
+  if (esCampoManualLector(activo)) return false;
+
   const tag = activo.tagName?.toLowerCase();
 
   // NO ROBAR FOCO A ESTOS CONTROLES
@@ -3543,84 +3514,28 @@ function puedeRecuperarFoco() {
 }
 
 
-// CLICK GENERAL
-if (false) document.addEventListener("click", (e) => {
+document.addEventListener("change", e => {
+  const control = e.target;
+  if (control.tagName?.toLowerCase() !== "select" || control.closest?.("#registros-fechas")) return;
+  recuperarLectorDespuesDeControl(control);
+}, true);
 
-  const target = e.target;
-
-  if (!target) return;
-
-  const tag = target.tagName?.toLowerCase();
-
-  // CONTROLES QUE NO DEBEN PERDER FOCO
-  if (
-    tag === "select" ||
-    tag === "option" ||
-    tag === "button" ||
-    tag === "textarea"
-  ) {
-    return;
-  }
-
-  // INPUT NORMAL
-  if (
-    tag === "input" &&
-    target !== barcodeInput
-  ) {
-    return;
-  }
-
-  setTimeout(() => {
-
-    if (!escaneando) {
-      focusBarcodeSeguro();
-    }
-
-  }, 250);
+document.addEventListener("pointerup", e => {
+  const control = e.target.closest?.("input, select, textarea, [contenteditable='true']");
+  if (control && control !== barcodeInput) return;
+  setTimeout(() => { focusBarcodeSeguro(); }, 0);
 });
 
-// AL VOLVER A LA PESTAÑA
-if (false) document.addEventListener("visibilitychange", () => {
-
-  if (!document.hidden) {
-
-    setTimeout(() => {
-
-      if (!escaneando) {
-        focusBarcodeSeguro();
-      }
-
-    }, 300);
-  }
-});
-
-document.addEventListener("pointerup", (e) => {
-  const target = e.target;
-  if (!target) return;
-
-  const tag = target.tagName?.toLowerCase();
-
-  if (tag === "select" || tag === "option" || tag === "textarea") return;
-  if (tag === "input" && target !== barcodeInput) return;
-
-  setTimeout(() => {
-    if (!escaneando) focusBarcodeSeguro();
-  }, 120);
+document.addEventListener("focusout", () => {
+  setTimeout(() => { focusBarcodeSeguro(); }, 40);
 });
 
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) return;
-
-  setTimeout(() => {
-    if (!escaneando) activarLectorAutomatico(5, 180);
-  }, 200);
+  if (!document.hidden) activarLectorAutomatico(5, 120);
 });
 
-window.addEventListener("focus", () => {
-  setTimeout(() => {
-    if (!escaneando) activarLectorAutomatico(5, 180);
-  }, 150);
-});
+window.addEventListener("focus", () => { activarLectorAutomatico(5, 120); });
+window.addEventListener("pageshow", () => { activarLectorAutomatico(5, 120); });
 
 async function activarViajeInicialAutomatico() {
   const contenedor = document.getElementById("viajes-botones");
@@ -3685,15 +3600,13 @@ window.addEventListener("load", async () => {
     }
   }, 2000);
 
-  await cargarContadorGeneralBD();
-await cargarBloquesGenerales();
-await cargarVariedadesGlobales();
-await cargarCatalogoTiposOffline();
-await cargarViajes();
-
   limpiarConsultaGeneral();
-
+  await cargarViajes();
   await activarViajeInicialAutomatico();
+  await Promise.allSettled([
+    cargarContadorGeneralBD(), cargarBloquesGenerales(),
+    cargarVariedadesGlobales(), cargarCatalogoTiposOffline()
+  ]);
 
   if (navigator.onLine) {
     setTimeout(async () => {
